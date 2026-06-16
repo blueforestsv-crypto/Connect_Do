@@ -279,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 12),
 
                     SwitchListTile(
-                      activeColor: const Color(0xFF22C55E),
+                      activeThumbColor: const Color(0xFF22C55E),
                       title: Text(
                         "Modo Oscuro",
                         style: TextStyle(
@@ -308,7 +308,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
 
                     SwitchListTile(
-                      activeColor: const Color(0xFF22C55E),
+                      activeThumbColor: const Color(0xFF22C55E),
                       title: Text(
                         "Perfil Privado",
                         style: TextStyle(
