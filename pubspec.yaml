@@ -1,0 +1,74 @@
+name: project_ena
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+  cupertino_icons: ^1.0.8
+  flutter_svg: ^2.2.2
+  phosphor_flutter: ^2.1.0
+  url_launcher: ^6.3.2
+  shared_preferences: ^2.5.3
+  share_plus: ^10.0.4
+  video_player:
+  just_audio:
+  
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/Connect Do-01.png # Usa comillas por el espacio en el nombre
+    - assets/images/WallpaperCD.png      # Corregido de DC a CD
+    - assets/images/icono 1-01.png
+    - assets/images/Connet Do.png
+    - assets/images/Profesional P.svg
+    - assets/images/Friends.svg
+    - assets/images/Ready.svg 
+    - assets/icons/Chat.svg
+    - assets/icons/Comment.svg
+    - assets/icons/Home.svg
+    - assets/icons/Keep.svg
+    - assets/icons/Keep active.svg
+    - assets/icons/Notification.svg
+    - assets/icons/New publication.svg
+    - assets/icons/Profile.svg
+    - assets/icons/Reward.svg
+    - assets/icons/Reward active.svg
+    - assets/icons/Share.svg
+    - assets/icons/Search.svg
+
+
+  fonts:
+    - family: Space Grotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-Regular.otf
+        - asset: assets/fonts/SpaceGrotesk-Bold.otf
+          weight: 700
+        - asset: assets/fonts/SpaceGrotesk-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-Medium.otf
+          weight: 500
+        - asset: assets/fonts/SpaceGrotesk-Light.otf
+          weight: 300
+        
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/Connect Do-01.png"
+  adaptive_icon_background: "#2563EB"
+  adaptive_icon_foreground: "assets/images/Connect Do-01.png"
