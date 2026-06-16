@@ -106,7 +106,7 @@ class _LoadingScreenState extends State<LoadingScreen>
                     fontFamily: "Space Grotesk",
                     fontSize: 14,
                     fontWeight: FontWeight.w400,
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                     letterSpacing: 2.0,
                   ),
                 ),

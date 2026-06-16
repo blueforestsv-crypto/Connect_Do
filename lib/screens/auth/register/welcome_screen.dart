@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -49,7 +49,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             borderRadius: BorderRadius.circular(20),
           ),
           elevation: 8,
-          shadowColor: color.withOpacity(0.5),
+          shadowColor: color.withValues(alpha: 0.5),
         ),
         child: Text(
           text,
@@ -117,7 +117,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  const Color(0xFF2563EB).withOpacity(0.4),
+                  const Color(0xFF2563EB).withValues(alpha: 0.4),
                   Colors.transparent,
                 ],
               ),
@@ -158,7 +158,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
+                    color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 25,
                     spreadRadius: 2,
                     offset: const Offset(0, -10),

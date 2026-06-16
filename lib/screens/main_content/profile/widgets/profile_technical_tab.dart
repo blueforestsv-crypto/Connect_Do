@@ -4,7 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class ProfileTechnicalTab extends StatefulWidget {
   final bool isDarkMode;

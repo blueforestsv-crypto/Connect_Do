@@ -273,7 +273,7 @@ class _AppMediaPlayerState extends State<AppMediaPlayer> {
                         width: 62,
                         height: 62,
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withValues(alpha: 0.45),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -295,7 +295,7 @@ class _AppMediaPlayerState extends State<AppMediaPlayer> {
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
+                          color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Row(

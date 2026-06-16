@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/screens/main_content/notification/notifications_screen.dart';
-import 'package:project_ena/services/publication_service.dart';
-import 'package:project_ena/services/notification_service.dart';
-import 'package:project_ena/widgets/feed/publication_card.dart';
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
+import 'package:connect_do/services/publication_service.dart';
+import 'package:connect_do/services/notification_service.dart';
+import 'package:connect_do/widgets/publication_card.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class FeedScreen extends StatefulWidget {
   final ScrollController scrollController;

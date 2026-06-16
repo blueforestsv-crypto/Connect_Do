@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import 'package:project_ena/models/notification_model.dart';
-import 'package:project_ena/services/notification_service.dart';
+import 'package:connect_do/models/notification_model.dart';
+import 'package:connect_do/services/notification_service.dart';
 
-import 'package:project_ena/screens/main_content/chats/chatlist_screen.dart';
-import 'package:project_ena/screens/main_content/contacts/contacts_screen.dart';
-import 'package:project_ena/screens/main_content/home/publication_detail_screen.dart';
+import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
+import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
+import 'package:connect_do/screens/main_content/home/publication_detail_screen.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 // ---------------------------------------------------------------------------
 // PANTALLA DE NOTIFICACIONES
@@ -418,8 +418,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final Color unreadBgColor =
         isDarkMode
-            ? const Color(0xFF2563EB).withOpacity(0.16)
-            : const Color(0xFF2563EB).withOpacity(0.05);
+            ? const Color(0xFF2563EB).withValues(alpha: 0.16)
+            : const Color(0xFF2563EB).withValues(alpha: 0.05);
 
     final Color readBgColor =
         isDarkMode ? const Color(0xFF121212) : Colors.white;

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class BenefitsScreen extends StatefulWidget {
   const BenefitsScreen({super.key});
@@ -183,7 +183,7 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
         borderRadius: BorderRadius.circular(40),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -216,7 +216,9 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                               (context, error, stackTrace) => Icon(
                                 Icons.handshake_outlined,
                                 size: isSmallScreen ? 80 : 100,
-                                color: const Color(0xFF22C55E).withOpacity(0.5),
+                                color: const Color(
+                                  0xFF22C55E,
+                                ).withValues(alpha: 0.5),
                               ),
                         ),
               ),

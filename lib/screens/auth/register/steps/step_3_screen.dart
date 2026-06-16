@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class Step3Screen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -374,7 +374,7 @@ class _Step3ScreenState extends State<Step3Screen> {
                                     vertical: 7,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.14),
+                                    color: Colors.white.withValues(alpha: 0.14),
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                   child: Row(

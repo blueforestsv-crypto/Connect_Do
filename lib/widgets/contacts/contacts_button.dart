@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/contact_request_model.dart';
-import 'package:project_ena/services/contact_service.dart';
+import 'package:connect_do/models/contact_request_model.dart';
+import 'package:connect_do/services/contact_service.dart';
 
 class ContactButton extends StatefulWidget {
   final String otherUserId;

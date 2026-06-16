@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/widgets/feed/publication_actions.dart';
-import 'package:project_ena/widgets/feed/publication_header.dart';
-import 'package:project_ena/widgets/feed/publication_content.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/widgets/feed/publication_actions.dart';
+import 'package:connect_do/widgets/feed/publication_header.dart';
+import 'package:connect_do/widgets/feed/publication_content.dart';
 
 class PublicationCard extends StatelessWidget {
   final PublicationModel post;

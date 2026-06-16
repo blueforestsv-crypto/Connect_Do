@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/services/saved_publication_service.dart';
-import 'package:project_ena/widgets/feed/publication_card.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/saved_publication_service.dart';
+import 'package:connect_do/widgets/publication_card.dart';
 
 class SavedPublicationsScreen extends StatefulWidget {
   const SavedPublicationsScreen({super.key});

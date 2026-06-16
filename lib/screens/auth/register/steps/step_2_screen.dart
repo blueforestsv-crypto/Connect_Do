@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 import 'step_3_screen.dart';
 
@@ -151,7 +151,7 @@ class _Step2ScreenState extends State<Step2Screen> {
     allData['skills'] = _selectedSkills;
     allData['portfolio_link'] = _linkController.text.trim();
 
-    print("Datos listos para enviar al backend (o al Paso 3): $allData");
+    debugPrint("Datos listos para enviar al backend (o al Paso 3): $allData");
 
     Navigator.push(
       context,
@@ -434,7 +434,7 @@ class _Step2ScreenState extends State<Step2Screen> {
                   ),
                   side: BorderSide.none,
                 );
-              }).toList(),
+              }),
 
               IntrinsicWidth(
                 child: ConstrainedBox(

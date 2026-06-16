@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/contact_request_model.dart';
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/services/comment_service.dart';
-import 'package:project_ena/services/contact_service.dart';
-import 'package:project_ena/services/saved_publication_service.dart';
-import 'package:project_ena/widgets/comment_sheet.dart';
+import 'package:connect_do/models/contact_request_model.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/comment_service.dart';
+import 'package:connect_do/services/contact_service.dart';
+import 'package:connect_do/services/saved_publication_service.dart';
+import 'package:connect_do/widgets/comment_sheet.dart';
 
 class PublicationActions extends StatefulWidget {
   final PublicationModel post;

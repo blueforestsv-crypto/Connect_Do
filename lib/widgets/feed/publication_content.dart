@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/widgets/media/app_media_player.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/widgets/media/app_media_player.dart';
 
 class PublicationContent extends StatelessWidget {
   final PublicationModel post;

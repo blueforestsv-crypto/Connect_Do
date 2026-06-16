@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/publication_model.dart';
+import 'package:connect_do/models/publication_model.dart';
 
 class SavedPublicationService {
   static const String _storageKey = 'saved_publications';

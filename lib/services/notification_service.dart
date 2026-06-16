@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/notification_model.dart';
+import 'package:connect_do/models/notification_model.dart';
 
 class NotificationService {
   static const String _storageKey = 'app_notifications';

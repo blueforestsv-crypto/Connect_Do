@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/contact_request_model.dart';
+import 'package:connect_do/models/contact_request_model.dart';
 
 class ContactService {
   static const String _storageKey = 'contact_requests';

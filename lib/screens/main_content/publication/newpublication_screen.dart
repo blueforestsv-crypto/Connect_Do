@@ -5,11 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/notification_model.dart';
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/services/notification_service.dart';
-import 'package:project_ena/services/publication_service.dart';
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/models/notification_model.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/notification_service.dart';
+import 'package:connect_do/services/publication_service.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class NewPublicationScreen extends StatefulWidget {
   final VoidCallback onBackToFeed;
@@ -360,7 +360,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: color.withOpacity(0.14),
+            backgroundColor: color.withValues(alpha: 0.14),
             child: Icon(icon, color: color, size: 30),
           ),
 
@@ -501,7 +501,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
               top: 10,
               right: 10,
               child: CircleAvatar(
-                backgroundColor: Colors.black.withOpacity(0.65),
+                backgroundColor: Colors.black.withValues(alpha: 0.65),
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
                   onPressed: _removeSelectedAttachment,
@@ -538,7 +538,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: const Color(0xFF2563EB).withOpacity(0.15),
+                backgroundColor: const Color(
+                  0xFF2563EB,
+                ).withValues(alpha: 0.15),
                 child: Icon(icon, color: const Color(0xFF2563EB)),
               ),
 

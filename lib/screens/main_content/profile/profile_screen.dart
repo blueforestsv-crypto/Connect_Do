@@ -3,16 +3,16 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/services/theme_service.dart';
-import 'package:project_ena/services/publication_service.dart';
-import 'package:project_ena/services/saved_publication_service.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/theme_service.dart';
+import 'package:connect_do/services/publication_service.dart';
+import 'package:connect_do/services/saved_publication_service.dart';
 
-import 'package:project_ena/screens/main_content/contacts/contacts_screen.dart';
-import 'package:project_ena/screens/auth/login/login_screen.dart';
+import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
+import 'package:connect_do/screens/auth/login/login_screen.dart';
 
-import 'package:project_ena/widgets/feed/publication_card.dart';
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/widgets/publication_card.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 import 'widgets/profile_header.dart';
 import 'widgets/profile_technical_tab.dart';

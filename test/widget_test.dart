@@ -8,15 +8,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:project_ena/main.dart';
-import 'package:project_ena/screens/auth/register/welcome_screen.dart';
+import 'package:connect_do/screens/auth/register/welcome_screen.dart';
 
 void main() {
-  testWidgets('App inicia correctamente', (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp(initialScreen: WelcomeScreen()));
+  testWidgets('La pantalla de bienvenida carga con animación continua', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: WelcomeScreen()));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('¡Bienvenido a Connect Do!'), findsOneWidget);
+    expect(find.text('Regístrate'), findsOneWidget);
+    expect(find.text('Inicia sesión'), findsOneWidget);
+
+    // Avanzamos la animación sin esperar que termine.
+    await tester.pump(const Duration(seconds: 1));
+
+    // La pantalla sigue montada y funcional.
+    expect(find.byType(WelcomeScreen), findsOneWidget);
   });
 }

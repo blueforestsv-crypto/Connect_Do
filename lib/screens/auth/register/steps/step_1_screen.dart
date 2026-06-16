@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 import 'step_2_screen.dart';
 
@@ -63,7 +63,7 @@ class _Step1ScreenState extends State<Step1Screen> {
       'cycle': _selectedCycle,
     };
 
-    print("Datos del Paso 1 listos: $collectedData");
+    debugPrint("Datos del Paso 1 listos: $collectedData");
 
     Navigator.push(
       context,

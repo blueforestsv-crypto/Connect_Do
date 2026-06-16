@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import 'package:project_ena/models/post_model.dart';
-import 'package:project_ena/models/publication_model.dart';
-import 'package:project_ena/services/comment_service.dart';
-import 'package:project_ena/services/saved_publication_service.dart';
-import 'package:project_ena/widgets/comment_sheet.dart';
+import 'package:connect_do/models/post_model.dart';
+import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/comment_service.dart';
+import 'package:connect_do/services/saved_publication_service.dart';
+import 'package:connect_do/widgets/comment_sheet.dart';
 
 class PostCard extends StatefulWidget {
   final PostModel postData;

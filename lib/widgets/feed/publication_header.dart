@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:project_ena/models/publication_model.dart';
+import 'package:connect_do/models/publication_model.dart';
 
 class PublicationHeader extends StatelessWidget {
   final PublicationModel post;
@@ -282,7 +282,7 @@ class PublicationHeader extends StatelessWidget {
   }) {
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: color.withOpacity(0.12),
+        backgroundColor: color.withValues(alpha: 0.12),
         child: Icon(icon, color: color),
       ),
       title: Text(

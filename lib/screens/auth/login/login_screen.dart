@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/screens/main_content/home/home_screen.dart';
-import 'package:project_ena/screens/auth/register/benefits_screen.dart';
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/screens/main_content/home/home_screen.dart';
+import 'package:connect_do/screens/auth/register/benefits_screen.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -49,6 +49,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // =====================================================
   Future<void> _checkSavedUser() async {
     final prefs = await SharedPreferences.getInstance();
+
+    if (!mounted) return;
 
     final datosJson = prefs.getString('usuario_actual');
 
@@ -115,7 +117,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final prefs = await SharedPreferences.getInstance();
 
+    if (!mounted) return;
+
     await prefs.setBool('sesion_activa', true);
+
+    if (!mounted) return;
 
     await Future.delayed(const Duration(milliseconds: 600));
 
@@ -151,6 +157,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final prefs = await SharedPreferences.getInstance();
 
+    if (!mounted) return;
+
     final datosJson = prefs.getString('usuario_actual');
 
     if (datosJson == null || datosJson.isEmpty) {
@@ -174,7 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     await Future.delayed(const Duration(milliseconds: 700));
 
+    if (!mounted) return;
+
     final emailMatches = typedEmail.toLowerCase() == savedEmail.toLowerCase();
+
     final passwordMatches = typedPassword == savedPassword;
 
     if (emailMatches && passwordMatches) {
@@ -255,12 +266,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: isDark ? const Color(0xFF1E293B) : Colors.white,
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(
-                          color: const Color(0xFF2563EB).withOpacity(0.5),
+                          color: const Color(0xFF2563EB).withValues(alpha: 0.5),
                           width: 2,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: const Offset(0, 10),
                           ),
@@ -453,8 +464,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder:
-                                          (context) => const BenefitsScreen(),
+                                      builder: (_) => const BenefitsScreen(),
                                     ),
                                   );
                                 },

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:project_ena/screens/main_content/home/home_screen.dart';
-import 'package:project_ena/utils/responsive_helper.dart';
+import 'package:connect_do/screens/main_content/home/home_screen.dart';
+import 'package:connect_do/utils/responsive_helper.dart';
 
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});

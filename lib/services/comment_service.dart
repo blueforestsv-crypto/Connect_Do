@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:project_ena/models/comment_model.dart';
+import 'package:connect_do/models/comment_model.dart';
 
 class CommentService {
   static const String _storageKey = 'comments_storage';

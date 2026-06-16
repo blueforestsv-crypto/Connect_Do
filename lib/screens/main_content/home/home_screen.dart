@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import 'package:project_ena/screens/main_content/chats/chatlist_screen.dart';
-import 'package:project_ena/screens/main_content/home/feed_screen.dart';
-import 'package:project_ena/screens/main_content/profile/profile_screen.dart';
-import 'package:project_ena/screens/main_content/publication/newpublication_screen.dart';
+import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
+import 'package:connect_do/screens/main_content/home/feed_screen.dart';
+import 'package:connect_do/screens/main_content/profile/profile_screen.dart';
+import 'package:connect_do/screens/main_content/publication/newpublication_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -59,15 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<bool> _handleBackButton() async {
-    if (_selectedIndex != 0) {
-      _goToFeed();
-      return false;
-    }
-
-    return true;
-  }
-
   Widget _buildNavItem(IconData iconRegular, IconData iconFill, int index) {
     final isSelected = _selectedIndex == index;
 
@@ -88,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           color:
               isSelected
-                  ? const Color(0xFF10B970).withOpacity(0.15)
+                  ? const Color(0xFF10B970).withValues(alpha: 0.15)
                   : Colors.transparent,
           shape: BoxShape.circle,
         ),
@@ -103,8 +94,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _handleBackButton,
+    return PopScope(
+      canPop: _selectedIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        if (_selectedIndex != 0) {
+          _goToFeed();
+        }
+      },
       child: Scaffold(
         backgroundColor: Colors.white,
         extendBody: true,
@@ -118,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(35),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
+                  color: Colors.black.withValues(alpha: 0.2),
                   blurRadius: 15,
                   offset: const Offset(0, 8),
                 ),
