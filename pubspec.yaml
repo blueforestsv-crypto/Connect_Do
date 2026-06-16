@@ -1,7 +1,7 @@
 name: connect_do
 description:  "Red social profesional orientada a conectar estudiantes universitarios con oportunidades, empresas y otros usuarios."
 publish_to: 'none'
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.7.2
