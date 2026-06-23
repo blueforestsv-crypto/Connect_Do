@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -20,10 +20,11 @@ class ProfileHeader extends StatefulWidget {
 }
 
 class _ProfileHeaderState extends State<ProfileHeader> {
-  String _userName = "Cargando...";
-  String _userCareer = "";
-  String _googlePhoto = "";
-  String _localPhotoPath = "";
+  String _userName = 'Cargando...';
+  String _userCareer = '';
+  String _userEmail = '';
+  String _googlePhoto = '';
+  String _localPhotoBase64 = '';
 
   final ImagePicker _picker = ImagePicker();
 
@@ -41,29 +42,61 @@ class _ProfileHeaderState extends State<ProfileHeader> {
 
     final datosJson = prefs.getString('usuario_actual');
 
-    if (datosJson == null) return;
+    if (datosJson == null || datosJson.isEmpty) {
+      if (!mounted) return;
 
-    final userData = jsonDecode(datosJson);
+      setState(() {
+        _userName = 'Usuario';
+        _userCareer = 'Sin carrera';
+        _userEmail = '';
+        _googlePhoto = '';
+        _localPhotoBase64 = '';
+      });
 
-    final String email = userData['email'] ?? "";
-
-    final String firstName = userData['firstName'] ?? '';
-    final String lastName = userData['lastName'] ?? '';
-
-    String fullName = "$firstName $lastName".trim();
-
-    if (fullName.isEmpty && email.isNotEmpty) {
-      fullName = email.split('@')[0].replaceAll('.', ' ');
+      return;
     }
 
-    if (!mounted) return;
+    try {
+      final Map<String, dynamic> userData = jsonDecode(datosJson);
 
-    setState(() {
-      _userName = fullName.isEmpty ? "Usuario" : fullName;
-      _userCareer = userData['career'] ?? "Sin carrera";
-      _googlePhoto = userData['google_photo_url'] ?? "";
-      _localPhotoPath = userData['profile_image_path'] ?? "";
-    });
+      final String email = userData['email']?.toString() ?? '';
+
+      final String firstName = userData['firstName']?.toString() ?? '';
+      final String lastName = userData['lastName']?.toString() ?? '';
+
+      String fullName = '$firstName $lastName'.trim();
+
+      if (fullName.isEmpty && email.isNotEmpty) {
+        fullName = email.split('@')[0].replaceAll('.', ' ');
+      }
+
+      final String career = userData['career']?.toString() ?? '';
+
+      final String googlePhoto = userData['google_photo_url']?.toString() ?? '';
+
+      final String profilePhotoBase64 =
+          userData['profile_image_base64']?.toString() ?? '';
+
+      if (!mounted) return;
+
+      setState(() {
+        _userName = fullName.isEmpty ? 'Usuario' : fullName;
+        _userCareer = career.isEmpty ? 'Sin carrera registrada' : career;
+        _userEmail = email;
+        _googlePhoto = googlePhoto;
+        _localPhotoBase64 = profilePhotoBase64;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _userName = 'Usuario';
+        _userCareer = 'Sin carrera registrada';
+        _userEmail = '';
+        _googlePhoto = '';
+        _localPhotoBase64 = '';
+      });
+    }
   }
 
   // ============================
@@ -74,26 +107,36 @@ class _ProfileHeaderState extends State<ProfileHeader> {
       final XFile? pickedImage = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 80,
+        maxWidth: 900,
       );
 
       if (pickedImage == null) return;
+
+      final Uint8List imageBytes = await pickedImage.readAsBytes();
+
+      final String imageBase64 = base64Encode(imageBytes);
 
       final prefs = await SharedPreferences.getInstance();
 
       final datosJson = prefs.getString('usuario_actual');
 
-      if (datosJson == null) return;
+      Map<String, dynamic> userData = {};
 
-      final Map<String, dynamic> userData = jsonDecode(datosJson);
+      if (datosJson != null && datosJson.isNotEmpty) {
+        userData = jsonDecode(datosJson) as Map<String, dynamic>;
+      }
 
-      userData['profile_image_path'] = pickedImage.path;
+      userData['profile_image_base64'] = imageBase64;
+
+      // Dejamos este campo viejo por compatibilidad, pero ya no dependemos de él.
+      userData['profile_image_path'] = pickedImage.name;
 
       await prefs.setString('usuario_actual', jsonEncode(userData));
 
       if (!mounted) return;
 
       setState(() {
-        _localPhotoPath = pickedImage.path;
+        _localPhotoBase64 = imageBase64;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,11 +162,12 @@ class _ProfileHeaderState extends State<ProfileHeader> {
   // AVATAR
   // ============================
   ImageProvider? _getProfileImage() {
-    if (_localPhotoPath.isNotEmpty) {
-      final file = File(_localPhotoPath);
-
-      if (file.existsSync()) {
-        return FileImage(file);
+    if (_localPhotoBase64.isNotEmpty) {
+      try {
+        final Uint8List bytes = base64Decode(_localPhotoBase64);
+        return MemoryImage(bytes);
+      } catch (_) {
+        return null;
       }
     }
 
@@ -132,6 +176,25 @@ class _ProfileHeaderState extends State<ProfileHeader> {
     }
 
     return null;
+  }
+
+  String _getInitials() {
+    final cleanName = _userName.trim();
+
+    if (cleanName.isEmpty || cleanName == 'Cargando...') {
+      return 'U';
+    }
+
+    final parts =
+        cleanName.split(' ').where((part) => part.trim().isNotEmpty).toList();
+
+    if (parts.isEmpty) return 'U';
+
+    if (parts.length == 1) {
+      return parts.first[0].toUpperCase();
+    }
+
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
   @override
@@ -165,10 +228,13 @@ class _ProfileHeaderState extends State<ProfileHeader> {
                       backgroundImage: imageProvider,
                       child:
                           imageProvider == null
-                              ? const Icon(
-                                Icons.person,
-                                size: 40,
-                                color: Colors.white,
+                              ? Text(
+                                _getInitials(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               )
                               : null,
                     ),
@@ -217,6 +283,19 @@ class _ProfileHeaderState extends State<ProfileHeader> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+
+                    if (_userEmail.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _userEmail,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
 
                     const SizedBox(height: 6),
 

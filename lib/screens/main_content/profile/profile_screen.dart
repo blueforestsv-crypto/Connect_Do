@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/theme_service.dart';
-import 'package:connect_do/services/publication_service.dart';
+import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/saved_publication_service.dart';
 
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
@@ -64,8 +64,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // No borramos usuario_actual para que siga apareciendo "Entrar como..."
+    // Cerramos sesión real para que no quede token activo en el front.
     await prefs.setBool('sesion_activa', false);
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('accessToken');
+    await prefs.remove('token');
+
+    // No borramos usuario_actual para que siga apareciendo "Entrar como..."
+    // si tu login rápido todavía lo usa.
 
     if (!mounted) return;
 
@@ -376,6 +383,8 @@ class UserPublicationsTab extends StatefulWidget {
 class _UserPublicationsTabState extends State<UserPublicationsTab> {
   bool isLoading = true;
 
+  final PublicationApiService _publicationApiService = PublicationApiService();
+
   String currentUserName = '';
   List<PublicationModel> userPosts = [];
 
@@ -386,57 +395,76 @@ class _UserPublicationsTabState extends State<UserPublicationsTab> {
   }
 
   Future<void> _loadUserPublications() async {
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    final userJson = prefs.getString('usuario_actual');
+      final userJson = prefs.getString('usuario_actual');
 
-    String userName = '';
+      String userName = '';
+      String userEmail = '';
 
-    if (userJson != null && userJson.isNotEmpty) {
-      final userData = jsonDecode(userJson);
+      if (userJson != null && userJson.isNotEmpty) {
+        final userData = jsonDecode(userJson);
 
-      final firstName = userData['firstName'] ?? '';
-      final lastName = userData['lastName'] ?? '';
-      final fullName = '$firstName $lastName'.trim();
+        final firstName = userData['firstName']?.toString() ?? '';
+        final lastName = userData['lastName']?.toString() ?? '';
+        final fullName = '$firstName $lastName'.trim();
 
-      if (fullName.isNotEmpty) {
-        userName = fullName;
-      } else {
-        final email = userData['email'] ?? '';
+        userEmail = userData['email']?.toString() ?? '';
 
-        if (email.toString().isNotEmpty) {
-          userName = email.toString().split('@')[0];
+        if (fullName.isNotEmpty) {
+          userName = fullName;
+        } else if (userEmail.isNotEmpty) {
+          userName = userEmail;
         }
       }
+
+      final publications = await _publicationApiService.getPublications();
+
+      final filtered =
+          publications.where((post) {
+            final postUserName = post.userName.trim().toLowerCase();
+            final currentName = userName.trim().toLowerCase();
+            final currentEmail = userEmail.trim().toLowerCase();
+
+            return postUserName == currentName || postUserName == currentEmail;
+          }).toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        currentUserName = userName;
+        userPosts = filtered;
+        isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar tus publicaciones: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
-
-    final publications = await PublicationService.getPublications();
-
-    final filtered =
-        publications.where((post) {
-          return post.userName.trim().toLowerCase() ==
-              userName.trim().toLowerCase();
-        }).toList();
-
-    if (!mounted) return;
-
-    setState(() {
-      currentUserName = userName;
-      userPosts = filtered;
-      isLoading = false;
-    });
   }
 
   Future<void> _deletePublication(PublicationModel post) async {
-    await PublicationService.deletePublication(post.id);
-
-    await _loadUserPublications();
+    // Eliminación visual por ahora.
+    // Luego conectamos esto con DELETE /publications/{id}.
+    setState(() {
+      userPosts.removeWhere((item) => item.id == post.id);
+    });
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Publicación eliminada'),
+        content: Text('Publicación eliminada visualmente'),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 2),
       ),

@@ -23,14 +23,15 @@ class ProfileTechnicalTab extends StatefulWidget {
 class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
   Map<String, dynamic> _userData = {};
 
-  String _userEmail = "";
-  String _userPhone = "No registrado";
-  String _userCareer = "";
-  String _userCycle = "";
-  String _userDescription = "";
-  String _portfolioLink = "";
-  String _cvName = "Sin CV";
-  String _cvPath = "";
+  String _userEmail = '';
+  String _userPhone = 'No registrado';
+  String _userCareer = '';
+  String _userCycle = '';
+  String _userDescription = '';
+  String _portfolioLink = '';
+  String _cvName = 'Sin CV';
+  String _cvPath = '';
+  int _cvSize = 0;
 
   List<String> _skills = [];
 
@@ -94,35 +95,77 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
 
     if (datosJson == null || datosJson.isEmpty) return;
 
-    final Map<String, dynamic> userData = jsonDecode(datosJson);
+    try {
+      final Map<String, dynamic> userData = jsonDecode(datosJson);
 
-    final String cvPath =
-        (userData['cv_file_path'] ?? userData['cv_path'] ?? '').toString();
+      final String cvPath =
+          (userData['cv_file_path'] ?? userData['cv_path'] ?? '').toString();
 
-    final String cvName =
-        (userData['cv_file_name'] ?? '').toString().isNotEmpty
-            ? userData['cv_file_name'].toString()
-            : cvPath.isNotEmpty
-            ? cvPath.split('/').last
-            : 'Sin CV';
+      final String cvName =
+          (userData['cv_file_name'] ?? '').toString().isNotEmpty
+              ? userData['cv_file_name'].toString()
+              : cvPath.isNotEmpty
+              ? cvPath.split('/').last.split('\\').last
+              : 'Sin CV';
 
-    if (!mounted) return;
+      final int cvSize = _parseInt(userData['cv_file_size']);
 
-    setState(() {
-      _userData = userData;
+      if (!mounted) return;
 
-      _userEmail = userData['email'] ?? "";
-      _userPhone = userData['phone'] ?? "No registrado";
-      _userCareer = userData['career'] ?? "Sin carrera";
-      _userCycle = userData['cycle'] ?? "Sin ciclo";
-      _userDescription = userData['description'] ?? "";
-      _portfolioLink = userData['portfolio_link'] ?? "";
+      setState(() {
+        _userData = userData;
 
-      _skills = List<String>.from(userData['skills'] ?? []);
+        _userEmail = userData['email']?.toString() ?? '';
+        _userPhone = userData['phone']?.toString() ?? 'No registrado';
+        _userCareer = userData['career']?.toString() ?? 'Sin carrera';
+        _userCycle = userData['cycle']?.toString() ?? 'Sin ciclo';
+        _userDescription = userData['description']?.toString() ?? '';
+        _portfolioLink = userData['portfolio_link']?.toString() ?? '';
 
-      _cvPath = cvPath;
-      _cvName = cvName;
-    });
+        _skills = List<String>.from(userData['skills'] ?? []);
+
+        _cvPath = cvPath;
+        _cvName = cvName;
+        _cvSize = cvSize;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _userData = {};
+        _userEmail = '';
+        _userPhone = 'No registrado';
+        _userCareer = 'Sin carrera';
+        _userCycle = 'Sin ciclo';
+        _userDescription = '';
+        _portfolioLink = '';
+        _skills = [];
+        _cvPath = '';
+        _cvName = 'Sin CV';
+        _cvSize = 0;
+      });
+    }
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value == null) return 0;
+
+    if (value is int) return value;
+
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes <= 0) return '';
+
+    final kb = bytes / 1024;
+    final mb = kb / 1024;
+
+    if (mb >= 1) {
+      return '${mb.toStringAsFixed(1)} MB';
+    }
+
+    return '${kb.toStringAsFixed(0)} KB';
   }
 
   // ===============================
@@ -136,11 +179,12 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
     _userData['description'] = _userDescription;
     _userData['portfolio_link'] = _portfolioLink;
 
-    // Guardamos en formato nuevo
+    // Guardamos en formato nuevo.
     _userData['cv_file_path'] = _cvPath;
     _userData['cv_file_name'] = _cvName == 'Sin CV' ? '' : _cvName;
+    _userData['cv_file_size'] = _cvSize;
 
-    // Compatibilidad con código viejo
+    // Compatibilidad con código viejo.
     _userData['cv_path'] = _cvPath;
 
     await prefs.setString('usuario_actual', jsonEncode(_userData));
@@ -154,29 +198,28 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx'],
+        allowMultiple: false,
+        withData: true,
       );
 
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
 
-      if (file.path == null) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo obtener la ruta del archivo'),
-            backgroundColor: Colors.red,
-          ),
-        );
-
-        return;
-      }
-
       setState(() {
-        _cvPath = file.path!;
+        _cvPath = file.name;
         _cvName = file.name;
+        _cvSize = file.size;
       });
+
+      _userData['cv_file_name'] = file.name;
+      _userData['cv_file_path'] = file.name;
+      _userData['cv_path'] = file.name;
+      _userData['cv_file_size'] = file.size;
+
+      if (file.bytes != null) {
+        _userData['cv_file_base64'] = base64Encode(file.bytes!);
+      }
 
       await _saveChanges();
 
@@ -393,7 +436,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
   // AÑADIR HABILIDAD
   // ===============================
   void _showAddSkillDialog() {
-    String selectedSkill = "";
+    String selectedSkill = '';
 
     showDialog(
       context: context,
@@ -426,7 +469,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                   return DropdownMenuItem(value: skill, child: Text(skill));
                 }).toList(),
             onChanged: (value) {
-              selectedSkill = value ?? "";
+              selectedSkill = value ?? '';
             },
           ),
           actions: [
@@ -478,7 +521,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
         ResponsiveHelper.appBottomNavSpace(context),
       ),
       children: [
-        _sectionTitle("Información General"),
+        _sectionTitle('Información General'),
 
         const SizedBox(height: 15),
 
@@ -488,7 +531,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
 
         const SizedBox(height: 30),
 
-        _sectionTitle("Sobre mí"),
+        _sectionTitle('Sobre mí'),
 
         const SizedBox(height: 12),
 
@@ -498,7 +541,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
 
         _portfolioCard(textColor),
 
-        _sectionTitle("Curriculum Vitae"),
+        _sectionTitle('Curriculum Vitae'),
 
         const SizedBox(height: 12),
 
@@ -509,12 +552,12 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _sectionTitle("Habilidades"),
+            _sectionTitle('Habilidades'),
             TextButton.icon(
               onPressed: _showAddSkillDialog,
               icon: const Icon(Icons.add, color: Color(0xFF22C55E)),
               label: const Text(
-                "Añadir",
+                'Añadir',
                 style: TextStyle(color: Color(0xFF22C55E)),
               ),
             ),
@@ -566,11 +609,11 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
           ListTile(
             leading: const Icon(Icons.email, color: Color(0xFF2563EB)),
             title: Text(
-              "Correo",
+              'Correo',
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              _userEmail,
+              _userEmail.isNotEmpty ? _userEmail : 'No registrado',
               style: TextStyle(
                 color: widget.isDarkMode ? Colors.white70 : Colors.black54,
               ),
@@ -579,11 +622,11 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
           ListTile(
             leading: const Icon(Icons.phone, color: Color(0xFF22C55E)),
             title: Text(
-              "Teléfono",
+              'Teléfono',
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              _userPhone,
+              _userPhone.isNotEmpty ? _userPhone : 'No registrado',
               style: TextStyle(
                 color: widget.isDarkMode ? Colors.white70 : Colors.black54,
               ),
@@ -592,11 +635,11 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
           ListTile(
             leading: const Icon(Icons.school, color: Colors.orange),
             title: Text(
-              "Carrera",
+              'Carrera',
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              _userCareer,
+              _userCareer.isNotEmpty ? _userCareer : 'Sin carrera',
               style: TextStyle(
                 color: widget.isDarkMode ? Colors.white70 : Colors.black54,
               ),
@@ -605,11 +648,11 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
           ListTile(
             leading: const Icon(Icons.timeline, color: Colors.purple),
             title: Text(
-              "Ciclo",
+              'Ciclo',
               style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              _userCycle,
+              _userCycle.isNotEmpty ? _userCycle : 'Sin ciclo',
               style: TextStyle(
                 color: widget.isDarkMode ? Colors.white70 : Colors.black54,
               ),
@@ -662,7 +705,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle("Portafolio"),
+        _sectionTitle('Portafolio'),
 
         const SizedBox(height: 12),
 
@@ -699,7 +742,9 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
   }
 
   Widget _cvCard(Color textColor) {
-    final hasCv = _cvPath.isNotEmpty;
+    final hasCv = _cvName.isNotEmpty && _cvName != 'Sin CV';
+
+    final sizeLabel = _formatFileSize(_cvSize);
 
     return Card(
       elevation: 0,
@@ -718,7 +763,9 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
         ),
         subtitle: Text(
           hasCv
-              ? 'CV cargado. Toca para actualizarlo'
+              ? sizeLabel.isNotEmpty
+                  ? 'CV cargado · $sizeLabel · Toca para actualizarlo'
+                  : 'CV cargado. Toca para actualizarlo'
               : 'Toca para subir tu CV',
           style: TextStyle(
             color: widget.isDarkMode ? Colors.white60 : Colors.grey,
