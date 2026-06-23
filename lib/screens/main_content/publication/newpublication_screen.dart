@@ -1,13 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:connect_do/models/notification_model.dart';
-import 'package:connect_do/models/publication_model.dart';
-import 'package:connect_do/services/notification_service.dart';
 import 'package:connect_do/services/publication_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
@@ -121,7 +114,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   }
 
   // =====================================================
-  // PUBLICAR
+  // PUBLICAR EN BACKEND
   // =====================================================
   Future<void> _publishPost() async {
     if (!_canPublish || isPublishing) return;
@@ -131,70 +124,22 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final description = _contentController.text.trim();
 
-      final userJson = prefs.getString('usuario_actual');
-
-      if (userJson == null) {
-        throw Exception('Usuario no encontrado');
+      if (description.isEmpty) {
+        throw Exception('Escribe el contenido de la publicación.');
       }
 
-      final userData = jsonDecode(userJson);
+      final title = _buildTitleFromDescription(description);
 
-      String userName = 'Usuario';
-
-      final firstName = userData['firstName'] ?? '';
-      final lastName = userData['lastName'] ?? '';
-      final fullName = '$firstName $lastName'.trim();
-
-      if (fullName.isNotEmpty) {
-        userName = fullName;
-      } else {
-        final email = userData['email'] ?? '';
-
-        if (email.isNotEmpty) {
-          userName = email.split('@')[0];
-        }
-      }
-
-      String userPhoto = '';
-
-      if ((userData['profile_image_path'] ?? '').toString().isNotEmpty) {
-        userPhoto = userData['profile_image_path'];
-      } else if ((userData['google_photo_url'] ?? '').toString().isNotEmpty) {
-        userPhoto = userData['google_photo_url'];
-      }
-
-      final publicationId = DateTime.now().millisecondsSinceEpoch.toString();
-
-      final publication = PublicationModel(
-        id: publicationId,
-        userName: userName,
-        userPhoto: userPhoto,
-        description: _contentController.text.trim(),
-        imagePath: _selectedImagePath,
-        filePath: _selectedFilePath,
-        fileName: _selectedFileName,
-        fileType: _selectedFileType,
-        createdAt: DateTime.now(),
+      await PublicationService.createPublicationOnBackend(
+        title: title,
+        description: description,
+        type: 'general',
+        location: null,
+        modality: null,
+        imageUrl: null,
       );
-
-      await PublicationService.addPublication(publication);
-
-      final notification = NotificationModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: 'publication_created',
-        userId: 'current_user',
-        userName: userName,
-        userAvatar: userPhoto,
-        content: 'tu publicación se subió correctamente.',
-        timeAgo: 'Ahora',
-        referenceId: publicationId,
-        createdAt: DateTime.now(),
-        isRead: false,
-      );
-
-      await NotificationService.addNotification(notification);
 
       if (!mounted) return;
 
@@ -233,6 +178,16 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     }
   }
 
+  String _buildTitleFromDescription(String description) {
+    final cleanDescription = description.trim();
+
+    if (cleanDescription.length <= 60) {
+      return cleanDescription;
+    }
+
+    return '${cleanDescription.substring(0, 60)}...';
+  }
+
   // =====================================================
   // BOTTOM SHEET DE ARCHIVOS
   // =====================================================
@@ -268,9 +223,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 Text(
                   "Agregar a tu publicación",
                   style: TextStyle(
@@ -279,9 +232,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -298,7 +249,6 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                         );
                       },
                     ),
-
                     _uploadItem(
                       icon: Icons.videocam,
                       label: "Video",
@@ -312,7 +262,6 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                         );
                       },
                     ),
-
                     _uploadItem(
                       icon: Icons.insert_drive_file,
                       label: "Documento",
@@ -363,9 +312,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
             backgroundColor: color.withValues(alpha: 0.14),
             child: Icon(icon, color: color, size: 30),
           ),
-
           const SizedBox(height: 8),
-
           Text(
             label,
             style: TextStyle(
@@ -412,19 +359,16 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     ),
                   ),
                 ),
-
                 _privacyTile(
                   icon: Icons.people,
                   title: "solo tus contactos",
                   value: "solo tus contactos",
                 ),
-
                 _privacyTile(
                   icon: Icons.business_center,
                   title: "empresas y contactos",
                   value: "empresas y contactos",
                 ),
-
                 _privacyTile(
                   icon: Icons.public,
                   title: "todo el mundo",
@@ -490,13 +434,31 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(18),
-              child: Image.file(
-                File(_selectedImagePath!),
+              child: Image.asset(
+                _selectedImagePath!,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color:
+                          isDarkMode
+                              ? const Color(0xFF1E1E1E)
+                              : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Text(
+                      'Imagen seleccionada: $_selectedImagePath',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-
             Positioned(
               top: 10,
               right: 10,
@@ -543,9 +505,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                 ).withValues(alpha: 0.15),
                 child: Icon(icon, color: const Color(0xFF2563EB)),
               ),
-
               const SizedBox(width: 12),
-
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -559,9 +519,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-
                     const SizedBox(height: 4),
-
                     Text(
                       _selectedFileType == 'video'
                           ? 'Video adjunto'
@@ -577,7 +535,6 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                   ],
                 ),
               ),
-
               IconButton(
                 onPressed: _removeSelectedAttachment,
                 icon: const Icon(Icons.close, color: Colors.red),
@@ -607,17 +564,14 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       resizeToAvoidBottomInset: true,
-
       appBar: AppBar(
         backgroundColor: const Color(0xFF2563EB),
         elevation: 0,
         automaticallyImplyLeading: false,
-
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: isPublishing ? null : widget.onBackToFeed,
         ),
-
         title: Row(
           children: [
             const CircleAvatar(
@@ -625,9 +579,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
               backgroundColor: Colors.white24,
               child: Icon(Icons.person, color: Colors.white, size: 18),
             ),
-
             const SizedBox(width: 10),
-
             Flexible(
               child: GestureDetector(
                 onTap: () => _showPrivacyOptions(context),
@@ -654,7 +606,6 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-
                       const Icon(
                         Icons.arrow_drop_down,
                         color: Colors.white,
@@ -667,17 +618,14 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
             ),
           ],
         ),
-
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Color(0xFF22C55E), size: 30),
             onPressed: isPublishing ? null : () => _showUploadOptions(context),
           ),
-
           const SizedBox(width: 5),
         ],
       ),
-
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
@@ -704,9 +652,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                   ),
                 ),
               ),
-
               _buildAttachmentPreview(isDarkMode),
-
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
                 child: SizedBox(

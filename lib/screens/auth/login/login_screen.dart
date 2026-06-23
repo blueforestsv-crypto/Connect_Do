@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
 import 'package:connect_do/screens/auth/register/benefits_screen.dart';
+import 'package:connect_do/services/auth_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -92,16 +92,14 @@ class _LoginScreenState extends State<LoginScreen> {
   // OBTENER FOTO GUARDADA
   // =====================================================
   ImageProvider? _getSavedUserImage() {
-    if (_savedLocalPhotoPath != null && _savedLocalPhotoPath!.isNotEmpty) {
-      final file = File(_savedLocalPhotoPath!);
-
-      if (file.existsSync()) {
-        return FileImage(file);
-      }
-    }
-
     if (_savedGooglePhotoUrl != null && _savedGooglePhotoUrl!.isNotEmpty) {
       return NetworkImage(_savedGooglePhotoUrl!);
+    }
+
+    // En Flutter Web evitamos FileImage/File porque depende de dart:io.
+    // La foto local se puede reactivar después para Android/Windows.
+    if (_savedLocalPhotoPath != null && _savedLocalPhotoPath!.isNotEmpty) {
+      return null;
     }
 
     return null;
@@ -111,17 +109,34 @@ class _LoginScreenState extends State<LoginScreen> {
   // ENTRAR COMO USUARIO GUARDADO
   // =====================================================
   Future<void> _handleQuickLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token = prefs.getString('access_token');
+
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+
+      setState(() {
+        _showQuickLogin = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Vuelve a iniciar sesión para conectar con el servidor.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    final prefs = await SharedPreferences.getInstance();
-
-    if (!mounted) return;
-
     await prefs.setBool('sesion_activa', true);
-
-    if (!mounted) return;
 
     await Future.delayed(const Duration(milliseconds: 600));
 
@@ -135,7 +150,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // =====================================================
-  // LOGIN MANUAL LOCAL
+  // LOGIN MANUAL CON BACKEND
   // =====================================================
   Future<void> _handleManualLogin() async {
     final typedEmail = _userController.text.trim();
@@ -148,6 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.orange,
         ),
       );
+
       return;
     }
 
@@ -155,41 +171,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    final prefs = await SharedPreferences.getInstance();
-
-    if (!mounted) return;
-
-    final datosJson = prefs.getString('usuario_actual');
-
-    if (datosJson == null || datosJson.isEmpty) {
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hay una cuenta registrada en este dispositivo'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final Map<String, dynamic> userData = jsonDecode(datosJson);
-
-    final savedEmail = (userData['email'] ?? '').toString().trim();
-    final savedPassword = (userData['password'] ?? '').toString().trim();
-
-    await Future.delayed(const Duration(milliseconds: 700));
-
-    if (!mounted) return;
-
-    final emailMatches = typedEmail.toLowerCase() == savedEmail.toLowerCase();
-
-    final passwordMatches = typedPassword == savedPassword;
-
-    if (emailMatches && passwordMatches) {
-      await prefs.setBool('sesion_activa', true);
+    try {
+      await AuthService.login(email: typedEmail, password: typedPassword);
 
       if (!mounted) return;
 
@@ -198,7 +181,7 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
         (route) => false,
       );
-    } else {
+    } catch (e) {
       if (!mounted) return;
 
       setState(() {
@@ -206,8 +189,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Correo o contraseña incorrectos'),
+        SnackBar(
+          content: Text('No se pudo iniciar sesión: $e'),
           backgroundColor: Colors.red,
         ),
       );

@@ -42,6 +42,54 @@ class PublicationModel {
     this.comments = 0,
   });
 
+  String get displayTitle {
+    if (title.trim().isNotEmpty) {
+      return title.trim();
+    }
+
+    return description;
+  }
+
+  String get typeLabel {
+    switch (type) {
+      case 'internship':
+        return 'Pasantía';
+      case 'job':
+        return 'Empleo';
+      case 'social_service':
+        return 'Servicio social';
+      case 'freelance':
+        return 'Freelance';
+      case 'announcement':
+        return 'Convocatoria';
+      case 'general':
+        return 'General';
+      default:
+        return 'Publicación';
+    }
+  }
+
+  String get modalityLabel {
+    switch (modality) {
+      case 'remote':
+        return 'Remoto';
+      case 'onsite':
+        return 'Presencial';
+      case 'hybrid':
+        return 'Híbrido';
+      default:
+        return modality ?? '';
+    }
+  }
+
+  bool get hasLocation {
+    return location != null && location!.trim().isNotEmpty;
+  }
+
+  bool get hasModality {
+    return modalityLabel.trim().isNotEmpty;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -65,12 +113,12 @@ class PublicationModel {
   factory PublicationModel.fromJson(Map<String, dynamic> json) {
     final author = json['author'];
 
-    String resolvedUserName = json['userName'] ?? '';
+    String resolvedUserName = json['userName']?.toString() ?? '';
 
     if (author is Map<String, dynamic>) {
-      final firstName = author['first_name'] ?? '';
-      final lastName = author['last_name'] ?? '';
-      final email = author['email'] ?? '';
+      final firstName = author['first_name']?.toString() ?? '';
+      final lastName = author['last_name']?.toString() ?? '';
+      final email = author['email']?.toString() ?? '';
 
       resolvedUserName = '$firstName $lastName'.trim();
 
@@ -79,28 +127,32 @@ class PublicationModel {
       }
     }
 
+    if (resolvedUserName.isEmpty) {
+      resolvedUserName = 'Usuario de Connect Do';
+    }
+
     return PublicationModel(
       id: json['id']?.toString() ?? '',
       userName: resolvedUserName,
-      userPhoto: json['userPhoto'] ?? '',
-      title: json['title'] ?? '',
-      description: json['description'] ?? '',
-      type: json['type'] ?? 'general',
-      location: json['location'],
-      modality: json['modality'],
+      userPhoto: json['userPhoto']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      type: json['type']?.toString() ?? 'general',
+      location: json['location']?.toString(),
+      modality: json['modality']?.toString(),
 
       // Backend usa image_url, local usaba imagePath
-      imagePath: json['image_url'] ?? json['imagePath'],
+      imagePath: json['image_url']?.toString() ?? json['imagePath']?.toString(),
 
-      filePath: json['filePath'],
-      fileName: json['fileName'],
-      fileType: json['fileType'],
+      filePath: json['filePath']?.toString(),
+      fileName: json['fileName']?.toString(),
+      fileType: json['fileType']?.toString(),
 
       // Backend usa created_at, local usaba createdAt
       createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
 
-      likes: json['likes'] ?? 0,
-      comments: json['comments'] ?? 0,
+      likes: _parseInt(json['likes']),
+      comments: _parseInt(json['comments']),
     );
   }
 
@@ -112,5 +164,13 @@ class PublicationModel {
     } catch (_) {
       return DateTime.now();
     }
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value == null) return 0;
+
+    if (value is int) return value;
+
+    return int.tryParse(value.toString()) ?? 0;
   }
 }

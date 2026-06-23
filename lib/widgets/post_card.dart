@@ -46,7 +46,11 @@ class _PostCardState extends State<PostCard> {
       id: widget.postData.id,
       userName: widget.postData.userName,
       userPhoto: widget.postData.userAvatar,
+      title: widget.postData.title,
       description: widget.postData.description,
+      type: widget.postData.type,
+      location: widget.postData.location,
+      modality: widget.postData.modality,
       imagePath:
           widget.postData.imageUrls.isNotEmpty
               ? widget.postData.imageUrls.first
@@ -192,7 +196,6 @@ class _PostCardState extends State<PostCard> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-
                 ListTile(
                   leading: const Icon(
                     Icons.person_add_alt_1_outlined,
@@ -212,7 +215,6 @@ class _PostCardState extends State<PostCard> {
                     );
                   },
                 ),
-
                 ListTile(
                   leading: const Icon(
                     Icons.share_outlined,
@@ -232,7 +234,6 @@ class _PostCardState extends State<PostCard> {
                     );
                   },
                 ),
-
                 ListTile(
                   leading: const Icon(
                     Icons.dynamic_feed_outlined,
@@ -290,7 +291,6 @@ class _PostCardState extends State<PostCard> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-
                 ListTile(
                   leading: const Icon(Icons.share_outlined),
                   title: Text(
@@ -302,7 +302,6 @@ class _PostCardState extends State<PostCard> {
                     _showShareMenu();
                   },
                 ),
-
                 ListTile(
                   leading: const Icon(
                     Icons.visibility_off_outlined,
@@ -322,7 +321,6 @@ class _PostCardState extends State<PostCard> {
                     );
                   },
                 ),
-
                 ListTile(
                   leading: const Icon(
                     Icons.flag_outlined,
@@ -401,9 +399,7 @@ class _PostCardState extends State<PostCard> {
                           )
                           : null,
                 ),
-
                 const SizedBox(width: 12),
-
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,7 +414,6 @@ class _PostCardState extends State<PostCard> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-
                       Text(
                         widget.postData.timeAgo,
                         style: TextStyle(color: subtitleColor, fontSize: 12),
@@ -426,7 +421,6 @@ class _PostCardState extends State<PostCard> {
                     ],
                   ),
                 ),
-
                 IconButton(
                   onPressed: _showPostOptions,
                   icon: Icon(Icons.more_horiz, color: subtitleColor),
@@ -472,7 +466,6 @@ class _PostCardState extends State<PostCard> {
                     },
                   ),
                 ),
-
                 if (widget.postData.imageUrls.length > 1)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -503,9 +496,61 @@ class _PostCardState extends State<PostCard> {
           // ===============================
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Text(
-              widget.postData.description,
-              style: TextStyle(color: textColor, fontSize: 15, height: 1.45),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _typeBadge(
+                  label: widget.postData.typeLabel,
+                  isDarkMode: isDarkMode,
+                ),
+
+                if (widget.postData.hasTitle) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.postData.title,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 8),
+
+                Text(
+                  widget.postData.description,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15,
+                    height: 1.45,
+                  ),
+                ),
+
+                if (widget.postData.hasLocation ||
+                    widget.postData.hasModality) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (widget.postData.hasLocation)
+                        _infoChip(
+                          icon: Icons.location_on_outlined,
+                          text: widget.postData.location!,
+                          isDarkMode: isDarkMode,
+                        ),
+                      if (widget.postData.hasModality)
+                        _infoChip(
+                          icon: Icons.work_outline_rounded,
+                          text: widget.postData.modalityLabel,
+                          isDarkMode: isDarkMode,
+                        ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
 
@@ -545,21 +590,18 @@ class _PostCardState extends State<PostCard> {
                   color: isRewarded ? Colors.red : subtitleColor,
                   onTap: _toggleReward,
                 ),
-
                 _actionButton(
                   icon: Icons.comment_outlined,
                   text: 'Comentar',
                   color: subtitleColor,
                   onTap: _showCommentSheet,
                 ),
-
                 _actionButton(
                   icon: isKept ? Icons.bookmark : Icons.bookmark_border,
                   text: 'Guardar',
                   color: isKept ? const Color(0xFF10B970) : subtitleColor,
                   onTap: _toggleKeep,
                 ),
-
                 _actionButton(
                   icon: Icons.share_outlined,
                   text: 'Compartir',
@@ -567,6 +609,60 @@ class _PostCardState extends State<PostCard> {
                   onTap: _showShareMenu,
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _typeBadge({required String label, required bool isDarkMode}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color:
+            isDarkMode
+                ? const Color(0xFF1E3A8A).withAlpha(80)
+                : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF2563EB),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _infoChip({
+    required IconData icon,
+    required String text,
+    required bool isDarkMode,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF111827) : const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isDarkMode ? Colors.white10 : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF2563EB)),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              color:
+                  isDarkMode ? Colors.grey.shade200 : const Color(0xFF374151),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -588,9 +684,7 @@ class _PostCardState extends State<PostCard> {
         child: Row(
           children: [
             Icon(icon, size: 20, color: color),
-
             const SizedBox(width: 5),
-
             Text(
               text,
               style: TextStyle(
