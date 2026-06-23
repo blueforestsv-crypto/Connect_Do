@@ -28,6 +28,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isDarkMode = false;
   bool _isPrivateProfile = false;
 
+  int _profileTechnicalRefresh = 0;
+
   @override
   void initState() {
     super.initState();
@@ -71,8 +73,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await prefs.remove('accessToken');
     await prefs.remove('token');
 
-    // No borramos usuario_actual para que siga apareciendo "Entrar como..."
-    // si tu login rápido todavía lo usa.
+    // No borramos usuario_actual para conservar datos locales:
+    // foto, CV, teléfono, habilidades, etc.
 
     if (!mounted) return;
 
@@ -124,6 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: TabBarView(
                 children: [
                   ProfileTechnicalTab(
+                    key: ValueKey(_profileTechnicalRefresh),
                     isDarkMode: _isDarkMode,
                     isPrivateProfile: _isPrivateProfile,
                   ),
@@ -240,6 +243,298 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ================= CAMBIAR TELÉFONO =================
+  Future<void> _showChangePhoneDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final userJson = prefs.getString('usuario_actual');
+
+    String currentPhone = '';
+
+    if (userJson != null && userJson.isNotEmpty) {
+      try {
+        final userData = jsonDecode(userJson) as Map<String, dynamic>;
+        currentPhone = userData['phone']?.toString() ?? '';
+      } catch (_) {
+        currentPhone = '';
+      }
+    }
+
+    if (!mounted) return;
+
+    final controller = TextEditingController(text: currentPhone);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          title: Text(
+            'Cambiar número de teléfono',
+            style: TextStyle(
+              color: _isDarkMode ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.phone,
+            style: TextStyle(
+              color: _isDarkMode ? Colors.white : Colors.black87,
+            ),
+            cursorColor: const Color(0xFF22C55E),
+            decoration: InputDecoration(
+              hintText: 'Ej. 7777-7777',
+              hintStyle: TextStyle(
+                color: _isDarkMode ? Colors.white54 : Colors.grey,
+              ),
+              helperText: 'Se actualizará localmente en el perfil técnico.',
+              helperStyle: TextStyle(
+                color: _isDarkMode ? Colors.white54 : Colors.grey,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF22C55E),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final phone = controller.text.trim();
+
+                final prefs = await SharedPreferences.getInstance();
+                final userJson = prefs.getString('usuario_actual');
+
+                Map<String, dynamic> userData = {};
+
+                if (userJson != null && userJson.isNotEmpty) {
+                  try {
+                    userData = jsonDecode(userJson) as Map<String, dynamic>;
+                  } catch (_) {
+                    userData = {};
+                  }
+                }
+
+                userData['phone'] = phone;
+
+                await prefs.setString('usuario_actual', jsonEncode(userData));
+
+                if (!mounted) return;
+
+                setState(() {
+                  _profileTechnicalRefresh++;
+                });
+
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Teléfono actualizado'),
+                    backgroundColor: Color(0xFF22C55E),
+                  ),
+                );
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ================= CAMBIAR CORREO VISUAL =================
+  void _showChangeEmailDialog() {
+    final controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          title: Text(
+            'Cambiar correo',
+            style: TextStyle(
+              color: _isDarkMode ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.emailAddress,
+            style: TextStyle(
+              color: _isDarkMode ? Colors.white : Colors.black87,
+            ),
+            cursorColor: const Color(0xFF22C55E),
+            decoration: InputDecoration(
+              hintText: 'nuevo.correo@ejemplo.com',
+              hintStyle: TextStyle(
+                color: _isDarkMode ? Colors.white54 : Colors.grey,
+              ),
+              helperText: 'Versión demo: aún no cambia en backend.',
+              helperStyle: TextStyle(
+                color: _isDarkMode ? Colors.white54 : Colors.grey,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Cambio de correo disponible próximamente'),
+                    backgroundColor: Color(0xFF2563EB),
+                  ),
+                );
+              },
+              child: const Text('Solicitar cambio'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ================= CAMBIAR CONTRASEÑA VISUAL =================
+  void _showChangePasswordDialog() {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          title: Text(
+            'Cambiar contraseña',
+            style: TextStyle(
+              color: _isDarkMode ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: currentPasswordController,
+                  obscureText: true,
+                  style: TextStyle(
+                    color: _isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                  cursorColor: const Color(0xFF22C55E),
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña actual',
+                    labelStyle: TextStyle(
+                      color: _isDarkMode ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: newPasswordController,
+                  obscureText: true,
+                  style: TextStyle(
+                    color: _isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                  cursorColor: const Color(0xFF22C55E),
+                  decoration: InputDecoration(
+                    labelText: 'Nueva contraseña',
+                    labelStyle: TextStyle(
+                      color: _isDarkMode ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  style: TextStyle(
+                    color: _isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                  cursorColor: const Color(0xFF22C55E),
+                  decoration: InputDecoration(
+                    labelText: 'Confirmar nueva contraseña',
+                    labelStyle: TextStyle(
+                      color: _isDarkMode ? Colors.white70 : Colors.black54,
+                    ),
+                    helperText: 'Versión demo: aún no cambia en backend.',
+                    helperStyle: TextStyle(
+                      color: _isDarkMode ? Colors.white54 : Colors.grey,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                final newPassword = newPasswordController.text.trim();
+                final confirmPassword = confirmPasswordController.text.trim();
+
+                if (newPassword.isEmpty || confirmPassword.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Completa la nueva contraseña'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                if (newPassword != confirmPassword) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Las contraseñas no coinciden'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Cambio de contraseña disponible próximamente',
+                    ),
+                    backgroundColor: Color(0xFF2563EB),
+                  ),
+                );
+              },
+              child: const Text('Actualizar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // ================= CONFIGURACIÓN =================
   void _showConfigMenu() {
     showModalBottomSheet(
@@ -261,105 +556,189 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   20,
                   ResponsiveHelper.bottomSafe(context) + 20,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 18),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[400],
-                        borderRadius: BorderRadius.circular(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[400],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                       ),
-                    ),
 
-                    Text(
-                      "Configuración",
-                      style: TextStyle(
-                        color: _isDarkMode ? Colors.white : Colors.black87,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    SwitchListTile(
-                      activeThumbColor: const Color(0xFF22C55E),
-                      title: Text(
-                        "Modo Oscuro",
+                      Text(
+                        "Configuración",
                         style: TextStyle(
                           color: _isDarkMode ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: Text(
-                        "Aplicar tema oscuro en toda la app",
-                        style: TextStyle(
-                          color: _isDarkMode ? Colors.white60 : Colors.grey,
-                        ),
-                      ),
-                      value: _isDarkMode,
-                      onChanged: (val) async {
-                        setModalState(() {
-                          _isDarkMode = val;
-                        });
-
-                        setState(() {
-                          _isDarkMode = val;
-                        });
-
-                        await ThemeService.setDarkMode(val);
-                      },
-                    ),
-
-                    SwitchListTile(
-                      activeThumbColor: const Color(0xFF22C55E),
-                      title: Text(
-                        "Perfil Privado",
-                        style: TextStyle(
-                          color: _isDarkMode ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: Text(
-                        "Ocultar información personal del perfil",
-                        style: TextStyle(
-                          color: _isDarkMode ? Colors.white60 : Colors.grey,
-                        ),
-                      ),
-                      value: _isPrivateProfile,
-                      onChanged: (val) async {
-                        setModalState(() {
-                          _isPrivateProfile = val;
-                        });
-
-                        setState(() {
-                          _isPrivateProfile = val;
-                        });
-
-                        await _savePrivateProfile(val);
-                      },
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    ListTile(
-                      leading: const Icon(Icons.logout, color: Colors.red),
-                      title: const Text(
-                        "Cerrar sesión",
-                        style: TextStyle(
-                          color: Colors.red,
                           fontWeight: FontWeight.bold,
+                          fontSize: 18,
                         ),
                       ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _confirmLogout();
-                      },
-                    ),
-                  ],
+
+                      const SizedBox(height: 12),
+
+                      SwitchListTile(
+                        activeThumbColor: const Color(0xFF22C55E),
+                        title: Text(
+                          "Modo Oscuro",
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          "Aplicar tema oscuro en toda la app",
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white60 : Colors.grey,
+                          ),
+                        ),
+                        value: _isDarkMode,
+                        onChanged: (val) async {
+                          setModalState(() {
+                            _isDarkMode = val;
+                          });
+
+                          setState(() {
+                            _isDarkMode = val;
+                          });
+
+                          await ThemeService.setDarkMode(val);
+                        },
+                      ),
+
+                      SwitchListTile(
+                        activeThumbColor: const Color(0xFF22C55E),
+                        title: Text(
+                          "Perfil Privado",
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          "Ocultar información personal del perfil",
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white60 : Colors.grey,
+                          ),
+                        ),
+                        value: _isPrivateProfile,
+                        onChanged: (val) async {
+                          setModalState(() {
+                            _isPrivateProfile = val;
+                          });
+
+                          setState(() {
+                            _isPrivateProfile = val;
+                          });
+
+                          await _savePrivateProfile(val);
+                        },
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Divider(
+                        color:
+                            _isDarkMode ? Colors.white12 : Colors.grey.shade300,
+                      ),
+
+                      ListTile(
+                        leading: const Icon(
+                          Icons.phone_android,
+                          color: Color(0xFF22C55E),
+                        ),
+                        title: Text(
+                          'Cambiar número de teléfono',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Actualizar teléfono visible en el perfil',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white60 : Colors.grey,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showChangePhoneDialog();
+                        },
+                      ),
+
+                      ListTile(
+                        leading: const Icon(
+                          Icons.email_outlined,
+                          color: Color(0xFF2563EB),
+                        ),
+                        title: Text(
+                          'Cambiar correo',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Próximamente con verificación',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white60 : Colors.grey,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showChangeEmailDialog();
+                        },
+                      ),
+
+                      ListTile(
+                        leading: const Icon(
+                          Icons.lock_outline,
+                          color: Colors.orange,
+                        ),
+                        title: Text(
+                          'Cambiar contraseña',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Próximamente conectado al servidor',
+                          style: TextStyle(
+                            color: _isDarkMode ? Colors.white60 : Colors.grey,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showChangePasswordDialog();
+                        },
+                      ),
+
+                      Divider(
+                        color:
+                            _isDarkMode ? Colors.white12 : Colors.grey.shade300,
+                      ),
+
+                      ListTile(
+                        leading: const Icon(Icons.logout, color: Colors.red),
+                        title: const Text(
+                          "Cerrar sesión",
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _confirmLogout();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

@@ -197,6 +197,84 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // =====================================================
+  // RECUPERAR CONTRASEÑA VISUAL
+  // =====================================================
+  void _showForgotPasswordDialog() {
+    final emailController = TextEditingController(text: _userController.text);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          title: Text(
+            'Recuperar contraseña',
+            style: TextStyle(
+              color: isDark ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: TextField(
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+            cursorColor: const Color(0xFF22C55E),
+            decoration: InputDecoration(
+              hintText: 'Ingresa tu correo',
+              hintStyle: TextStyle(
+                color: isDark ? Colors.white54 : Colors.grey,
+              ),
+              helperText: 'Versión demo: recuperación próximamente.',
+              helperStyle: TextStyle(
+                color: isDark ? Colors.white54 : Colors.grey,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                final email = emailController.text.trim();
+
+                if (email.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ingresa tu correo'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Te enviaremos instrucciones cuando esta función esté disponible.',
+                    ),
+                    backgroundColor: Color(0xFF2563EB),
+                  ),
+                );
+              },
+              child: const Text('Enviar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -230,7 +308,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 if (_showQuickLogin && _hasSavedUser) ...[
                   Text(
-                    "Bienvenido de nuevo",
+                    'Bienvenido de nuevo',
                     style: TextStyle(
                       fontSize: 16,
                       color: isDark ? Colors.white70 : Colors.grey,
@@ -279,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 20),
 
                           Text(
-                            _savedName ?? "Usuario",
+                            _savedName ?? 'Usuario',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -291,7 +369,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 4),
 
                           Text(
-                            _savedEmail ?? "",
+                            _savedEmail ?? '',
                             style: TextStyle(
                               color: isDark ? Colors.white60 : Colors.grey,
                               fontSize: 16,
@@ -317,7 +395,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               child: const Center(
                                 child: Text(
-                                  "ENTRAR AHORA",
+                                  'ENTRAR AHORA',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -343,7 +421,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               });
                             },
                     child: const Text(
-                      "Usar otra cuenta",
+                      'Usar otra cuenta',
                       style: TextStyle(color: Colors.grey),
                     ),
                   ),
@@ -358,7 +436,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   _buildTextField(
                     controller: _userController,
-                    hint: "Correo institucional",
+                    hint: 'Correo institucional',
                     icon: Icons.alternate_email,
                     isDark: isDark,
                     keyboardType: TextInputType.emailAddress,
@@ -368,13 +446,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   _buildTextField(
                     controller: _passwordController,
-                    hint: "Contraseña",
+                    hint: 'Contraseña',
                     icon: Icons.lock_outline,
                     isPassword: true,
                     isDark: isDark,
                   ),
 
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 6),
+
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading ? null : _showForgotPasswordDialog,
+                      child: const Text(
+                        '¿Olvidaste tu contraseña?',
+                        style: TextStyle(
+                          color: Color(0xFF2563EB),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
 
                   SizedBox(
                     width: double.infinity,
@@ -399,7 +493,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               )
                               : const Text(
-                                "Iniciar Sesión",
+                                'Iniciar Sesión',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -422,7 +516,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 });
                               },
                       child: const Text(
-                        "Volver al usuario guardado",
+                        'Volver al usuario guardado',
                         style: TextStyle(color: Color(0xFF22C55E)),
                       ),
                     ),
@@ -434,7 +528,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
-                        "¿No tienes cuenta? ",
+                        '¿No tienes cuenta? ',
                         style: TextStyle(
                           color: isDark ? Colors.white70 : Colors.black87,
                         ),
@@ -452,7 +546,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   );
                                 },
                         child: const Text(
-                          "Regístrate",
+                          'Regístrate',
                           style: TextStyle(
                             color: Color(0xFF22C55E),
                             fontWeight: FontWeight.bold,
