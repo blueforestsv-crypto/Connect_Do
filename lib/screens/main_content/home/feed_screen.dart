@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
-import 'package:connect_do/services/publication_service.dart';
 import 'package:connect_do/services/notification_service.dart';
+import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/widgets/publication_card.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
@@ -19,9 +19,11 @@ class FeedScreen extends StatefulWidget {
 
 class FeedScreenState extends State<FeedScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final PublicationApiService _publicationApiService = PublicationApiService();
 
   List<PublicationModel> posts = [];
 
+  bool isLoading = true;
   bool isLoadingMore = false;
   bool hasMore = true;
 
@@ -38,12 +40,18 @@ class FeedScreenState extends State<FeedScreen> {
 
     return posts.where((post) {
       final userName = post.userName.toLowerCase();
+      final title = post.title.toLowerCase();
       final description = post.description.toLowerCase();
       final fileName = (post.fileName ?? '').toLowerCase();
+      final type = post.type.toLowerCase();
+      final location = (post.location ?? '').toLowerCase();
 
       return userName.contains(_searchQuery) ||
+          title.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
-          fileName.contains(_searchQuery);
+          fileName.contains(_searchQuery) ||
+          type.contains(_searchQuery) ||
+          location.contains(_searchQuery);
     }).toList();
   }
 
@@ -101,29 +109,51 @@ class FeedScreenState extends State<FeedScreen> {
   }
 
   // ===============================
-  // CARGAR PUBLICACIONES
+  // CARGAR PUBLICACIONES DESDE API
   // ===============================
   Future<void> _loadPublications() async {
-    final publications = await PublicationService.getPublications();
+    try {
+      final publications = await _publicationApiService.getPublications();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      posts = publications;
-    });
+      setState(() {
+        posts = publications;
+        isLoading = false;
+        hasMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar publicaciones: $error'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   // ===============================
   // REFRESH
   // ===============================
   Future<void> _refreshFeed() async {
+    setState(() {
+      isLoading = true;
+    });
+
     await _loadPublications();
     await _loadUnreadNotificationsCount();
 
     if (!mounted) return;
 
     setState(() {
-      hasMore = true;
+      hasMore = false;
     });
   }
 
@@ -131,15 +161,17 @@ class FeedScreenState extends State<FeedScreen> {
   // ELIMINAR PUBLICACIÓN
   // ===============================
   Future<void> _deletePublication(PublicationModel post) async {
-    await PublicationService.deletePublication(post.id);
-
-    await _loadPublications();
+    // Por ahora lo eliminamos visualmente.
+    // Luego conectamos esto con DELETE /publications/{id}.
+    setState(() {
+      posts.removeWhere((item) => item.id == post.id);
+    });
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Publicación eliminada'),
+        content: Text('Publicación eliminada localmente'),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 2),
       ),
@@ -156,7 +188,7 @@ class FeedScreenState extends State<FeedScreen> {
       isLoadingMore = true;
     });
 
-    await Future.delayed(const Duration(seconds: 1));
+    await Future.delayed(const Duration(milliseconds: 600));
 
     if (!mounted) return;
 
@@ -253,7 +285,6 @@ class FeedScreenState extends State<FeedScreen> {
 
     return Scaffold(
       backgroundColor: bgColor,
-
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(115),
         child: Container(
@@ -363,14 +394,25 @@ class FeedScreenState extends State<FeedScreen> {
           ),
         ),
       ),
-
       body: RefreshIndicator(
         color: const Color(0xFF10B970),
         backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
         onRefresh: _refreshFeed,
-
         child:
-            posts.isEmpty
+            isLoading
+                ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.only(bottom: bottomSpace),
+                  children: const [
+                    SizedBox(height: 220),
+                    Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF10B970),
+                      ),
+                    ),
+                  ],
+                )
+                : posts.isEmpty
                 ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.only(bottom: bottomSpace),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
 import 'package:connect_do/screens/main_content/home/feed_screen.dart';
