@@ -32,6 +32,14 @@ class PublicationContent extends StatelessWidget {
     return post.filePath != null && post.filePath!.isNotEmpty;
   }
 
+  bool get _isOpportunity {
+    return post.type == 'internship' ||
+        post.type == 'job' ||
+        post.type == 'social_service' ||
+        post.type == 'freelance' ||
+        post.type == 'announcement';
+  }
+
   String get _mediaType {
     if (_hasImage) return 'image';
 
@@ -58,6 +66,16 @@ class PublicationContent extends StatelessWidget {
     return post.fileName;
   }
 
+  void _showApplyMessage(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Aplicación a oportunidades próximamente'),
+        backgroundColor: Color(0xFF2563EB),
+        duration: Duration(milliseconds: 1200),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -71,16 +89,17 @@ class PublicationContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _TypeBadge(label: post.typeLabel, isDarkMode: isDarkMode),
+        if (_isOpportunity)
+          _TypeBadge(label: post.typeLabel, isDarkMode: isDarkMode),
 
         if (_hasTitle) ...[
-          const SizedBox(height: 10),
+          if (_isOpportunity) const SizedBox(height: 10),
           Text(
             post.title,
             style: TextStyle(
-              fontSize: 17,
+              fontSize: _isOpportunity ? 17 : 16,
               height: 1.25,
-              fontWeight: FontWeight.w700,
+              fontWeight: _isOpportunity ? FontWeight.w700 : FontWeight.w600,
               color: textColor,
             ),
           ),
@@ -94,7 +113,7 @@ class PublicationContent extends StatelessWidget {
           ),
         ],
 
-        if (_hasLocation || _hasModality) ...[
+        if (_isOpportunity && (_hasLocation || _hasModality)) ...[
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -113,6 +132,27 @@ class PublicationContent extends StatelessWidget {
                   isDarkMode: isDarkMode,
                 ),
             ],
+          ),
+        ],
+
+        if (_isOpportunity) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _showApplyMessage(context),
+              icon: const Icon(Icons.send_rounded, size: 18),
+              label: const Text('Aplicar aquí'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
           ),
         ],
 

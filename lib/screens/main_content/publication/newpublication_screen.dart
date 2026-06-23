@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -14,22 +16,21 @@ class NewPublicationScreen extends StatefulWidget {
 }
 
 class _NewPublicationScreenState extends State<NewPublicationScreen> {
-  String _currentPrivacy = "solo tus contactos";
+  String _currentPrivacy = 'solo tus contactos';
 
   final TextEditingController _contentController = TextEditingController();
 
   bool isPublishing = false;
   bool hasContent = false;
 
-  String? _selectedImagePath;
-  String? _selectedFilePath;
-  String? _selectedFileName;
-  String? _selectedFileType;
+  String? _selectedMediaPath;
+  String? _selectedMediaName;
+  String? _selectedMediaType;
+  Uint8List? _selectedImageBytes;
 
   @override
   void initState() {
     super.initState();
-
     _contentController.addListener(_checkContent);
   }
 
@@ -48,14 +49,14 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
   bool get _canPublish {
     return _contentController.text.trim().isNotEmpty ||
-        _selectedImagePath != null ||
-        _selectedFilePath != null;
+        _selectedMediaPath != null ||
+        _selectedImageBytes != null;
   }
 
   // =====================================================
-  // SELECCIONAR ARCHIVO
+  // SELECCIONAR MULTIMEDIA
   // =====================================================
-  Future<void> _pickFile({
+  Future<void> _pickMedia({
     required List<String> allowedExtensions,
     required String type,
   }) async {
@@ -66,27 +67,24 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         allowMultiple: false,
+        withData: true,
       );
 
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
 
-      if (file.path == null) return;
-
       if (!mounted) return;
 
       setState(() {
+        _selectedMediaPath = file.path;
+        _selectedMediaName = file.name;
+        _selectedMediaType = type;
+
         if (type == 'image') {
-          _selectedImagePath = file.path;
-          _selectedFilePath = null;
-          _selectedFileName = null;
-          _selectedFileType = null;
+          _selectedImageBytes = file.bytes;
         } else {
-          _selectedImagePath = null;
-          _selectedFilePath = file.path;
-          _selectedFileName = file.name;
-          _selectedFileType = type;
+          _selectedImageBytes = null;
         }
 
         hasContent = _canPublish;
@@ -103,12 +101,12 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     }
   }
 
-  void _removeSelectedAttachment() {
+  void _removeSelectedMedia() {
     setState(() {
-      _selectedImagePath = null;
-      _selectedFilePath = null;
-      _selectedFileName = null;
-      _selectedFileType = null;
+      _selectedMediaPath = null;
+      _selectedMediaName = null;
+      _selectedMediaType = null;
+      _selectedImageBytes = null;
       hasContent = _canPublish;
     });
   }
@@ -124,14 +122,17 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     });
 
     try {
-      final description = _contentController.text.trim();
+      final rawDescription = _contentController.text.trim();
 
-      if (description.isEmpty) {
-        throw Exception('Escribe el contenido de la publicación.');
-      }
+      final description =
+          rawDescription.isNotEmpty ? rawDescription : 'Publicación multimedia';
 
       final title = _buildTitleFromDescription(description);
 
+      // MVP actual:
+      // - Guarda el texto real en backend.
+      // - Imagen/video/pdf/link quedan preparados visualmente.
+      // - La subida real de archivos se implementará con endpoint /uploads.
       await PublicationService.createPublicationOnBackend(
         title: title,
         description: description,
@@ -146,10 +147,10 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       _contentController.clear();
 
       setState(() {
-        _selectedImagePath = null;
-        _selectedFilePath = null;
-        _selectedFileName = null;
-        _selectedFileType = null;
+        _selectedMediaPath = null;
+        _selectedMediaName = null;
+        _selectedMediaType = null;
+        _selectedImageBytes = null;
         hasContent = false;
         isPublishing = false;
       });
@@ -189,7 +190,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   }
 
   // =====================================================
-  // BOTTOM SHEET DE ARCHIVOS
+  // BOTTOM SHEET DE ADJUNTOS
   // =====================================================
   void _showUploadOptions(BuildContext context) {
     if (isPublishing) return;
@@ -223,64 +224,81 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+
                 const SizedBox(height: 20),
+
                 Text(
-                  "Agregar a tu publicación",
+                  'Adjuntar a tu publicación',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                     color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
+
                 const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 24,
+                  runSpacing: 18,
                   children: [
                     _uploadItem(
-                      icon: Icons.image,
-                      label: "Imagen",
+                      icon: Icons.image_outlined,
+                      label: 'Imagen',
                       color: Colors.blue,
                       onTap: () {
                         Navigator.pop(context);
 
-                        _pickFile(
+                        _pickMedia(
                           allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
                           type: 'image',
                         );
                       },
                     ),
+
                     _uploadItem(
-                      icon: Icons.videocam,
-                      label: "Video",
+                      icon: Icons.videocam_outlined,
+                      label: 'Video',
                       color: Colors.orange,
                       onTap: () {
                         Navigator.pop(context);
 
-                        _pickFile(
+                        _pickMedia(
                           allowedExtensions: ['mp4', 'mov', 'avi', 'mkv'],
                           type: 'video',
                         );
                       },
                     ),
+
                     _uploadItem(
-                      icon: Icons.insert_drive_file,
-                      label: "Documento",
+                      icon: Icons.picture_as_pdf_outlined,
+                      label: 'PDF',
                       color: Colors.red,
                       onTap: () {
                         Navigator.pop(context);
 
-                        _pickFile(
-                          allowedExtensions: [
-                            'pdf',
-                            'doc',
-                            'docx',
-                            'ppt',
-                            'pptx',
-                            'xls',
-                            'xlsx',
-                            'txt',
-                          ],
-                          type: 'document',
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Subida de PDF próximamente'),
+                            duration: Duration(milliseconds: 1200),
+                          ),
+                        );
+                      },
+                    ),
+
+                    _uploadItem(
+                      icon: Icons.link_rounded,
+                      label: 'Link',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Agregar links próximamente'),
+                            duration: Duration(milliseconds: 1200),
+                          ),
                         );
                       },
                     ),
@@ -305,23 +323,29 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
-      child: Column(
-        children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: color.withValues(alpha: 0.14),
-            child: Icon(icon, color: color, size: 30),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode ? Colors.white : Colors.black87,
+      child: SizedBox(
+        width: 72,
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: color.withValues(alpha: 0.14),
+              child: Icon(icon, color: color, size: 30),
             ),
-          ),
-        ],
+
+            const SizedBox(height: 8),
+
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -352,27 +376,30 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                 Padding(
                   padding: const EdgeInsets.all(15),
                   child: Text(
-                    "¿Quién puede ver esto?",
+                    '¿Quién puede ver esto?',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
+
                 _privacyTile(
                   icon: Icons.people,
-                  title: "solo tus contactos",
-                  value: "solo tus contactos",
+                  title: 'solo tus contactos',
+                  value: 'solo tus contactos',
                 ),
+
                 _privacyTile(
                   icon: Icons.business_center,
-                  title: "empresas y contactos",
-                  value: "empresas y contactos",
+                  title: 'empresas y contactos',
+                  value: 'empresas y contactos',
                 ),
+
                 _privacyTile(
                   icon: Icons.public,
-                  title: "todo el mundo",
-                  value: "todo el mundo",
+                  title: 'todo el mundo',
+                  value: 'todo el mundo',
                 ),
               ],
             ),
@@ -424,41 +451,32 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   }
 
   // =====================================================
-  // PREVIEW DE ARCHIVO
+  // PREVIEW DE ADJUNTO
   // =====================================================
-  Widget _buildAttachmentPreview(bool isDarkMode) {
-    if (_selectedImagePath != null) {
+  Widget _buildMediaPreview(bool isDarkMode) {
+    if (_selectedMediaType == null) {
+      return const SizedBox.shrink();
+    }
+
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
+    final subtitleColor =
+        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
+
+    if (_selectedMediaType == 'image' && _selectedImageBytes != null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Stack(
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(18),
-              child: Image.asset(
-                _selectedImagePath!,
+              child: Image.memory(
+                _selectedImageBytes!,
                 width: double.infinity,
+                height: 260,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color:
-                          isDarkMode
-                              ? const Color(0xFF1E1E1E)
-                              : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Text(
-                      'Imagen seleccionada: $_selectedImagePath',
-                      style: TextStyle(
-                        color: isDarkMode ? Colors.white70 : Colors.black54,
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
+
             Positioned(
               top: 10,
               right: 10,
@@ -466,7 +484,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                 backgroundColor: Colors.black.withValues(alpha: 0.65),
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: _removeSelectedAttachment,
+                  onPressed: _removeSelectedMedia,
                 ),
               ),
             ),
@@ -475,77 +493,65 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       );
     }
 
-    if (_selectedFilePath != null) {
-      final Color cardColor =
-          isDarkMode ? const Color(0xFF1E1E1E) : Colors.grey.shade100;
+    final icon =
+        _selectedMediaType == 'video'
+            ? Icons.play_circle_outline_rounded
+            : Icons.attach_file_rounded;
 
-      final Color textColor = isDarkMode ? Colors.white : Colors.black87;
+    final label =
+        _selectedMediaType == 'video'
+            ? 'Video seleccionado'
+            : 'Archivo seleccionado';
 
-      IconData icon;
-
-      if (_selectedFileType == 'video') {
-        icon = Icons.videocam;
-      } else {
-        icon = Icons.insert_drive_file;
-      }
-
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: const Color(
-                  0xFF2563EB,
-                ).withValues(alpha: 0.15),
-                child: Icon(icon, color: const Color(0xFF2563EB)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _selectedFileName ?? 'Archivo seleccionado',
-                      style: TextStyle(
-                        color: textColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _selectedFileType == 'video'
-                          ? 'Video adjunto'
-                          : 'Documento adjunto',
-                      style: TextStyle(
-                        color:
-                            isDarkMode
-                                ? Colors.grey.shade400
-                                : Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: _removeSelectedAttachment,
-                icon: const Icon(Icons.close, color: Colors.red),
-              ),
-            ],
-          ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(18),
         ),
-      );
-    }
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.15),
+              child: Icon(icon, color: const Color(0xFF2563EB)),
+            ),
 
-    return const SizedBox.shrink();
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    _selectedMediaName ?? 'Archivo multimedia',
+                    style: TextStyle(color: subtitleColor, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+
+            IconButton(
+              onPressed: _removeSelectedMedia,
+              icon: const Icon(Icons.close, color: Colors.red),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // =====================================================
@@ -564,14 +570,17 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       resizeToAvoidBottomInset: true,
+
       appBar: AppBar(
         backgroundColor: const Color(0xFF2563EB),
         elevation: 0,
         automaticallyImplyLeading: false,
+
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: isPublishing ? null : widget.onBackToFeed,
         ),
+
         title: Row(
           children: [
             const CircleAvatar(
@@ -579,7 +588,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
               backgroundColor: Colors.white24,
               child: Icon(Icons.person, color: Colors.white, size: 18),
             ),
+
             const SizedBox(width: 10),
+
             Flexible(
               child: GestureDetector(
                 onTap: () => _showPrivacyOptions(context),
@@ -606,6 +617,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+
                       const Icon(
                         Icons.arrow_drop_down,
                         color: Colors.white,
@@ -618,14 +630,22 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
             ),
           ],
         ),
+
         actions: [
           IconButton(
-            icon: const Icon(Icons.add, color: Color(0xFF22C55E), size: 30),
+            tooltip: 'Adjuntar archivo',
+            icon: const Icon(
+              Icons.attach_file_rounded,
+              color: Color(0xFF22C55E),
+              size: 28,
+            ),
             onPressed: isPublishing ? null : () => _showUploadOptions(context),
           ),
+
           const SizedBox(width: 5),
         ],
       ),
+
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
@@ -636,7 +656,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
                 child: TextField(
                   controller: _contentController,
                   enabled: !isPublishing,
@@ -646,13 +666,15 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                   style: TextStyle(fontSize: 18, color: textColor),
                   cursorColor: const Color(0xFF22C55E),
                   decoration: InputDecoration(
-                    hintText: "Comparte con tu red",
+                    hintText: '¿Qué quieres compartir?',
                     hintStyle: TextStyle(color: hintColor),
                     border: InputBorder.none,
                   ),
                 ),
               ),
-              _buildAttachmentPreview(isDarkMode),
+
+              _buildMediaPreview(isDarkMode),
+
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
                 child: SizedBox(
@@ -676,15 +698,15 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     child:
                         isPublishing
                             ? const SizedBox(
-                              height: 24,
-                              width: 24,
+                              height: 22,
+                              width: 22,
                               child: CircularProgressIndicator(
                                 color: Colors.white,
                                 strokeWidth: 2.5,
                               ),
                             )
                             : Text(
-                              "Publicar",
+                              'Publicar',
                               style: TextStyle(
                                 color:
                                     _canPublish
