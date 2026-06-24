@@ -57,13 +57,27 @@ class PublicationService {
     int limit = 20,
     int offset = 0,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token =
+        prefs.getString('access_token') ??
+        prefs.getString('accessToken') ??
+        prefs.getString('token');
+
+    if (token == null || token.isEmpty) {
+      throw Exception('No se encontró el token de sesión.');
+    }
+
     final uri = Uri.parse(
       '${ApiConfig.publications}?limit=$limit&offset=$offset',
     );
 
     final response = await http.get(
       uri,
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
     );
 
     if (response.statusCode != 200) {
@@ -104,7 +118,9 @@ class PublicationService {
     required String type,
     String? location,
     String? modality,
+    String visibility = 'contacts',
     String? imageUrl,
+    List<Map<String, dynamic>> mediaItems = const [],
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -123,7 +139,9 @@ class PublicationService {
       'type': type,
       'location': location,
       'modality': modality,
+      'visibility': visibility,
       'image_url': imageUrl,
+      'media_items': mediaItems,
     };
 
     body.removeWhere((key, value) {

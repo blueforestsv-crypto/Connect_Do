@@ -1,16 +1,34 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/api_config.dart';
 
 class PublicationApiService {
+  Future<String> _getAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token =
+        prefs.getString('access_token') ??
+        prefs.getString('accessToken') ??
+        prefs.getString('token');
+
+    if (token == null || token.isEmpty) {
+      throw Exception('No se encontró token de sesión.');
+    }
+
+    return token;
+  }
+
   Future<List<PublicationModel>> getPublications({
     String? type,
     int limit = 20,
     int offset = 0,
   }) async {
+    final token = await _getAccessToken();
+
     final queryParams = <String, String>{
       'limit': limit.toString(),
       'offset': offset.toString(),
@@ -22,7 +40,7 @@ class PublicationApiService {
 
     final response = await http.get(
       ApiConfig.uri('/publications', queryParams),
-      headers: const {'Accept': 'application/json'},
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
     );
 
     if (response.statusCode != 200) {

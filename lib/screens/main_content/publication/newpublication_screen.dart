@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -23,9 +24,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   bool isPublishing = false;
   bool hasContent = false;
 
-  String? _selectedMediaPath;
   String? _selectedMediaName;
   String? _selectedMediaType;
+  Uint8List? _selectedMediaBytes;
   Uint8List? _selectedImageBytes;
 
   @override
@@ -49,7 +50,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
   bool get _canPublish {
     return _contentController.text.trim().isNotEmpty ||
-        _selectedMediaPath != null ||
+        _selectedMediaName != null ||
         _selectedImageBytes != null;
   }
 
@@ -74,12 +75,27 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
       final file = result.files.single;
 
+      if (file.bytes == null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo leer el archivo seleccionado.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+
+        return;
+      }
+
       if (!mounted) return;
 
       setState(() {
-        _selectedMediaPath = file.path;
+        // En Flutter Web no existe file.path.
+        // Por eso usamos file.name y file.bytes.
         _selectedMediaName = file.name;
         _selectedMediaType = type;
+        _selectedMediaBytes = file.bytes;
 
         if (type == 'image') {
           _selectedImageBytes = file.bytes;
@@ -103,9 +119,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
   void _removeSelectedMedia() {
     setState(() {
-      _selectedMediaPath = null;
       _selectedMediaName = null;
       _selectedMediaType = null;
+      _selectedMediaBytes = null;
       _selectedImageBytes = null;
       hasContent = _canPublish;
     });
@@ -129,17 +145,46 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
       final title = _buildTitleFromDescription(description);
 
-      // MVP actual:
-      // - Guarda el texto real en backend.
-      // - Imagen/video/pdf/link quedan preparados visualmente.
-      // - La subida real de archivos se implementará con endpoint /uploads.
+      final List<Map<String, dynamic>> mediaItems = [];
+
+      if (_selectedMediaType == 'image' && _selectedImageBytes != null) {
+        mediaItems.add({
+          'type': 'image',
+          'base64': base64Encode(_selectedImageBytes!),
+          'file_name': _selectedMediaName ?? 'imagen.png',
+          'mime_type': _guessMimeType(_selectedMediaName),
+          'size_bytes': _selectedImageBytes!.length,
+        });
+      }
+
+      if (_selectedMediaType == 'video') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Por ahora solo subiremos imágenes. Video queda preparado para después.',
+            ),
+            duration: Duration(milliseconds: 1600),
+          ),
+        );
+
+        setState(() {
+          isPublishing = false;
+        });
+
+        return;
+      }
+
+      final visibility = _mapPrivacyToVisibility(_currentPrivacy);
+
       await PublicationService.createPublicationOnBackend(
         title: title,
         description: description,
         type: 'general',
         location: null,
         modality: null,
+        visibility: visibility,
         imageUrl: null,
+        mediaItems: mediaItems,
       );
 
       if (!mounted) return;
@@ -147,9 +192,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       _contentController.clear();
 
       setState(() {
-        _selectedMediaPath = null;
         _selectedMediaName = null;
         _selectedMediaType = null;
+        _selectedMediaBytes = null;
         _selectedImageBytes = null;
         hasContent = false;
         isPublishing = false;
@@ -187,6 +232,33 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     }
 
     return '${cleanDescription.substring(0, 60)}...';
+  }
+
+  String _mapPrivacyToVisibility(String privacy) {
+    switch (privacy) {
+      case 'todo el mundo':
+        return 'public';
+      case 'solo tus contactos':
+        return 'contacts';
+      case 'empresas y contactos':
+        return 'contacts';
+      default:
+        return 'contacts';
+    }
+  }
+
+  String _guessMimeType(String? fileName) {
+    final name = fileName?.toLowerCase() ?? '';
+
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+
+    if (name.endsWith('.webp')) {
+      return 'image/webp';
+    }
+
+    return 'image/png';
   }
 
   // =====================================================

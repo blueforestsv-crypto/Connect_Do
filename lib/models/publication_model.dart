@@ -1,3 +1,51 @@
+class PublicationMediaItem {
+  final String type;
+  final String base64;
+  final String? fileName;
+  final String? mimeType;
+  final int? sizeBytes;
+
+  PublicationMediaItem({
+    required this.type,
+    required this.base64,
+    this.fileName,
+    this.mimeType,
+    this.sizeBytes,
+  });
+
+  bool get isImage => type == 'image';
+
+  bool get isVideo => type == 'video';
+
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type,
+      'base64': base64,
+      'file_name': fileName,
+      'mime_type': mimeType,
+      'size_bytes': sizeBytes,
+    };
+  }
+
+  factory PublicationMediaItem.fromJson(Map<String, dynamic> json) {
+    return PublicationMediaItem(
+      type: json['type']?.toString() ?? '',
+      base64: json['base64']?.toString() ?? '',
+      fileName: json['file_name']?.toString() ?? json['fileName']?.toString(),
+      mimeType: json['mime_type']?.toString() ?? json['mimeType']?.toString(),
+      sizeBytes: _parseInt(json['size_bytes'] ?? json['sizeBytes']),
+    );
+  }
+
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+
+    if (value is int) return value;
+
+    return int.tryParse(value.toString());
+  }
+}
+
 class PublicationModel {
   final String id;
 
@@ -11,11 +59,15 @@ class PublicationModel {
   final String type;
   final String? location;
   final String? modality;
+  final String visibility;
 
-  // Imagen
+  // Imagen antigua
   final String? imagePath;
 
-  // Archivo / video / documento
+  // Multimedia nueva
+  final List<PublicationMediaItem> mediaItems;
+
+  // Archivo / video / documento local antiguo
   final String? filePath;
   final String? fileName;
   final String? fileType;
@@ -33,7 +85,9 @@ class PublicationModel {
     this.type = 'general',
     this.location,
     this.modality,
+    this.visibility = 'contacts',
     this.imagePath,
+    this.mediaItems = const [],
     this.filePath,
     this.fileName,
     this.fileType,
@@ -48,6 +102,16 @@ class PublicationModel {
     }
 
     return description;
+  }
+
+  bool get hasMedia {
+    return mediaItems.isNotEmpty;
+  }
+
+  PublicationMediaItem? get firstMedia {
+    if (mediaItems.isEmpty) return null;
+
+    return mediaItems.first;
   }
 
   String get typeLabel {
@@ -66,6 +130,19 @@ class PublicationModel {
         return 'General';
       default:
         return 'Publicación';
+    }
+  }
+
+  String get visibilityLabel {
+    switch (visibility) {
+      case 'public':
+        return 'Público';
+      case 'contacts':
+        return 'Solo contactos';
+      case 'private':
+        return 'Privado';
+      default:
+        return 'Solo contactos';
     }
   }
 
@@ -100,7 +177,9 @@ class PublicationModel {
       'type': type,
       'location': location,
       'modality': modality,
+      'visibility': visibility,
       'imagePath': imagePath,
+      'media_items': mediaItems.map((item) => item.toJson()).toList(),
       'filePath': filePath,
       'fileName': fileName,
       'fileType': fileType,
@@ -131,6 +210,18 @@ class PublicationModel {
       resolvedUserName = 'Usuario de Connect Do';
     }
 
+    final rawMediaItems = json['media_items'] ?? json['mediaItems'];
+
+    final List<PublicationMediaItem> parsedMediaItems = [];
+
+    if (rawMediaItems is List) {
+      for (final item in rawMediaItems) {
+        if (item is Map<String, dynamic>) {
+          parsedMediaItems.add(PublicationMediaItem.fromJson(item));
+        }
+      }
+    }
+
     return PublicationModel(
       id: json['id']?.toString() ?? '',
       userName: resolvedUserName,
@@ -140,15 +231,16 @@ class PublicationModel {
       type: json['type']?.toString() ?? 'general',
       location: json['location']?.toString(),
       modality: json['modality']?.toString(),
+      visibility: json['visibility']?.toString() ?? 'contacts',
 
-      // Backend usa image_url, local usaba imagePath
       imagePath: json['image_url']?.toString() ?? json['imagePath']?.toString(),
+
+      mediaItems: parsedMediaItems,
 
       filePath: json['filePath']?.toString(),
       fileName: json['fileName']?.toString(),
       fileType: json['fileType']?.toString(),
 
-      // Backend usa created_at, local usaba createdAt
       createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
 
       likes: _parseInt(json['likes']),
