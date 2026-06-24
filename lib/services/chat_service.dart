@@ -59,6 +59,27 @@ class ChatService {
   }
 
   // ===============================
+  // TOTAL DE MENSAJES NO LEÍDOS
+  // ===============================
+  static Future<int> getTotalUnreadMessages() async {
+    final conversations = await getConversations();
+
+    int total = 0;
+
+    for (final conversation in conversations) {
+      final unread = conversation['unread_count'];
+
+      if (unread is int) {
+        total += unread;
+      } else {
+        total += int.tryParse(unread?.toString() ?? '0') ?? 0;
+      }
+    }
+
+    return total;
+  }
+
+  // ===============================
   // MENSAJES CON CONTACTO
   // ===============================
   static Future<List<Map<String, dynamic>>> getMessages({
