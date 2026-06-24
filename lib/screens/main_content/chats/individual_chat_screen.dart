@@ -1,6 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 // ---------------------------------------------------------------------------
@@ -28,16 +34,48 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   List<ChatMessageModel> messages = [];
 
+  Timer? _pollingTimer;
+
   bool isTyping = false;
   bool isLoading = true;
+  bool isSending = false;
+
+  String _currentUserId = '';
 
   @override
   void initState() {
     super.initState();
 
-    _fetchMessages();
+    _loadCurrentUserAndMessages();
 
     _messageController.addListener(_onMessageChanged);
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _fetchMessages(showLoading: false);
+    });
+  }
+
+  Future<void> _loadCurrentUserAndMessages() async {
+    await _loadCurrentUserId();
+    await _fetchMessages();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final userJson = prefs.getString('usuario_actual');
+
+    if (userJson == null || userJson.isEmpty) {
+      return;
+    }
+
+    try {
+      final userData = jsonDecode(userJson) as Map<String, dynamic>;
+
+      _currentUserId = userData['id']?.toString() ?? '';
+    } catch (_) {
+      _currentUserId = '';
+    }
   }
 
   void _onMessageChanged() {
@@ -46,14 +84,36 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     });
   }
 
-  Future<void> _fetchMessages() async {
+  Future<void> _fetchMessages({bool showLoading = true}) async {
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      if (showLoading && mounted) {
+        setState(() {
+          isLoading = true;
+        });
+      }
+
+      final data = await ChatService.getMessages(contactId: widget.chatId);
+
+      final loadedMessages =
+          data
+              .map(
+                (item) => ChatMessageModel.fromBackend(
+                  item,
+                  currentUserId: _currentUserId,
+                ),
+              )
+              .toList()
+              .reversed
+              .toList();
+
+      try {
+        await ChatService.markAsRead(contactId: widget.chatId);
+      } catch (_) {}
 
       if (!mounted) return;
 
       setState(() {
-        messages = [];
+        messages = loadedMessages;
         isLoading = false;
       });
     } catch (e) {
@@ -62,51 +122,73 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       setState(() => isLoading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error al cargar los mensajes")),
+        SnackBar(
+          content: Text('Error al cargar los mensajes: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _messageController.removeListener(_onMessageChanged);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _sendMessage() {
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
 
-    if (text.isEmpty) return;
+    if (text.isEmpty || isSending) return;
 
     setState(() {
-      messages.insert(
-        0,
-        ChatMessageModel(
-          id: "temp_${DateTime.now().millisecondsSinceEpoch}",
-          text: text,
-          time: "Ahora",
-          isMe: true,
-        ),
-      );
+      isSending = true;
     });
 
-    _messageController.clear();
+    try {
+      final createdMessage = await ChatService.sendMessage(
+        contactId: widget.chatId,
+        content: text,
+      );
 
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+      final newMessage = ChatMessageModel.fromBackend(
+        createdMessage,
+        currentUserId: _currentUserId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        messages.insert(0, newMessage);
+        isSending = false;
+      });
+
+      _messageController.clear();
+
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isSending = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo enviar el mensaje: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
-
-    // BACKEND:
-    // SocketService.emit('send_message', {
-    //   'chatId': widget.chatId,
-    //   'text': text,
-    // });
   }
 
   void _handleVoiceMessage() {
@@ -132,7 +214,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         top: false,
         child: Column(
           children: [
-            // ================= MENSAJES =================
             Expanded(
               child:
                   isLoading
@@ -143,25 +224,28 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       )
                       : messages.isEmpty
                       ? _buildEmptyState(context)
-                      : ListView.builder(
-                        controller: _scrollController,
-                        reverse: true,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: EdgeInsets.fromLTRB(
-                          15,
-                          20,
-                          15,
-                          ResponsiveHelper.bottomSafe(context) + 20,
+                      : RefreshIndicator(
+                        color: const Color(0xFF10B970),
+                        onRefresh: () => _fetchMessages(showLoading: false),
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: EdgeInsets.fromLTRB(
+                            15,
+                            20,
+                            15,
+                            ResponsiveHelper.bottomSafe(context) + 20,
+                          ),
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            return _buildMessageBubble(messages[index]);
+                          },
                         ),
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          return _buildMessageBubble(messages[index]);
-                        },
                       ),
             ),
 
-            // ================= INPUT =================
             _buildMessageInput(),
           ],
         ),
@@ -176,6 +260,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         isDarkMode ? const Color(0xFF121212) : Colors.white;
 
     final Color textColor = isDarkMode ? Colors.white : Colors.black87;
+
+    final avatarImage = _buildAvatarImage(widget.chatAvatar);
 
     return AppBar(
       backgroundColor: appBarColor,
@@ -194,13 +280,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 radius: 20,
                 backgroundColor:
                     isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                backgroundImage:
-                    widget.chatAvatar.isNotEmpty
-                        ? NetworkImage(widget.chatAvatar)
-                        : null,
-                onBackgroundImageError: (_, __) {},
+                backgroundImage: avatarImage,
                 child:
-                    widget.chatAvatar.isEmpty
+                    avatarImage == null
                         ? Icon(
                           PhosphorIconsRegular.user,
                           color:
@@ -247,7 +329,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 ),
 
                 const Text(
-                  "En línea",
+                  'Chat activo',
                   style: TextStyle(
                     color: Color(0xFF10B970),
                     fontSize: 12,
@@ -262,7 +344,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       actions: [
         IconButton(
           icon: Icon(PhosphorIconsRegular.phone, color: textColor, size: 24),
-          onPressed: () {},
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Llamadas próximamente'),
+                duration: Duration(milliseconds: 900),
+              ),
+            );
+          },
         ),
         IconButton(
           icon: Icon(
@@ -270,7 +359,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
             color: textColor,
             size: 24,
           ),
-          onPressed: () {},
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Videollamadas próximamente'),
+                duration: Duration(milliseconds: 900),
+              ),
+            );
+          },
         ),
         const SizedBox(width: 5),
       ],
@@ -300,7 +396,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           const SizedBox(height: 15),
 
           Text(
-            "No hay mensajes aún.",
+            'No hay mensajes aún.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDarkMode ? Colors.grey[400] : Colors.grey[500],
@@ -311,7 +407,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           const SizedBox(height: 4),
 
           Text(
-            "¡Envía el primero!",
+            '¡Envía el primero!',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
@@ -331,6 +427,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
     final Color receivedTextColor = isDarkMode ? Colors.white : Colors.black87;
 
+    final avatarImage = _buildAvatarImage(widget.chatAvatar);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: Row(
@@ -342,59 +440,72 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
             CircleAvatar(
               radius: 12,
               backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[200],
-              child: Icon(
-                PhosphorIconsRegular.user,
-                size: 14,
-                color: isDarkMode ? Colors.grey[500] : Colors.grey[600],
-              ),
+              backgroundImage: avatarImage,
+              child:
+                  avatarImage == null
+                      ? Icon(
+                        PhosphorIconsRegular.user,
+                        size: 14,
+                        color: isDarkMode ? Colors.grey[500] : Colors.grey[600],
+                      )
+                      : null,
             ),
 
             const SizedBox(width: 8),
           ],
 
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              decoration: BoxDecoration(
-                color:
-                    message.isMe
-                        ? const Color(0xFF10B970)
-                        : receivedBubbleColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft:
-                      message.isMe
-                          ? const Radius.circular(20)
-                          : const Radius.circular(5),
-                  bottomRight:
-                      message.isMe
-                          ? const Radius.circular(5)
-                          : const Radius.circular(20),
+            child: Column(
+              crossAxisAlignment:
+                  message.isMe
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        message.isMe
+                            ? const Color(0xFF10B970)
+                            : receivedBubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(20),
+                      topRight: const Radius.circular(20),
+                      bottomLeft:
+                          message.isMe
+                              ? const Radius.circular(20)
+                              : const Radius.circular(5),
+                      bottomRight:
+                          message.isMe
+                              ? const Radius.circular(5)
+                              : const Radius.circular(20),
+                    ),
+                  ),
+                  child: Text(
+                    message.text,
+                    style: TextStyle(
+                      color: message.isMe ? Colors.white : receivedTextColor,
+                      fontSize: 15,
+                      height: 1.3,
+                    ),
+                  ),
                 ),
-              ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: message.isMe ? Colors.white : receivedTextColor,
-                  fontSize: 15,
-                  height: 1.3,
+
+                const SizedBox(height: 4),
+
+                Text(
+                  message.time,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-
-          if (message.isMe) ...[
-            const SizedBox(width: 8),
-
-            Text(
-              message.time,
-              style: TextStyle(
-                fontSize: 10,
-                color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -434,7 +545,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
               color: isDarkMode ? Colors.grey[400] : Colors.grey,
               size: 26,
             ),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Adjuntos próximamente'),
+                  duration: Duration(milliseconds: 900),
+                ),
+              );
+            },
           ),
 
           Expanded(
@@ -450,10 +568,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 maxLines: 4,
                 textCapitalization: TextCapitalization.sentences,
                 keyboardType: TextInputType.multiline,
+                enabled: !isSending,
                 style: TextStyle(color: textColor),
                 cursorColor: const Color(0xFF10B970),
                 decoration: InputDecoration(
-                  hintText: "Escribe un mensaje.",
+                  hintText: 'Escribe un mensaje.',
                   hintStyle: TextStyle(
                     color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
                   ),
@@ -476,24 +595,56 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: Icon(
-                isTyping
-                    ? PhosphorIconsFill.paperPlaneRight
-                    : PhosphorIconsFill.microphone,
-                color:
-                    isTyping
-                        ? Colors.white
-                        : isDarkMode
-                        ? Colors.grey[400]
-                        : Colors.grey[600],
-                size: 20,
-              ),
-              onPressed: isTyping ? _sendMessage : _handleVoiceMessage,
+              icon:
+                  isSending
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                      : Icon(
+                        isTyping
+                            ? PhosphorIconsFill.paperPlaneRight
+                            : PhosphorIconsFill.microphone,
+                        color:
+                            isTyping
+                                ? Colors.white
+                                : isDarkMode
+                                ? Colors.grey[400]
+                                : Colors.grey[600],
+                        size: 20,
+                      ),
+              onPressed:
+                  isSending
+                      ? null
+                      : isTyping
+                      ? _sendMessage
+                      : _handleVoiceMessage,
             ),
           ),
         ],
       ),
     );
+  }
+
+  ImageProvider? _buildAvatarImage(String value) {
+    if (value.isEmpty) return null;
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return NetworkImage(value);
+    }
+
+    try {
+      final cleanBase64 = value.contains(',') ? value.split(',').last : value;
+      final Uint8List bytes = base64Decode(cleanBase64);
+
+      return MemoryImage(bytes);
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -513,15 +664,34 @@ class ChatMessageModel {
     required this.isMe,
   });
 
-  factory ChatMessageModel.fromJson(
-    Map<String, dynamic> json,
-    String myUserId,
-  ) {
+  factory ChatMessageModel.fromBackend(
+    Map<String, dynamic> json, {
+    required String currentUserId,
+  }) {
+    final senderId = json['sender_id']?.toString() ?? '';
+
     return ChatMessageModel(
-      id: json['id'] ?? '',
-      text: json['text'] ?? '',
-      time: json['time'] ?? '',
-      isMe: json['sender_id'] == myUserId,
+      id: json['id']?.toString() ?? '',
+      text: json['content']?.toString() ?? '',
+      time: _formatTime(json['created_at']?.toString()),
+      isMe: senderId == currentUserId,
     );
+  }
+
+  static String _formatTime(String? rawDate) {
+    if (rawDate == null || rawDate.isEmpty) {
+      return '';
+    }
+
+    try {
+      final date = DateTime.parse(rawDate).toLocal();
+
+      final hour = date.hour.toString().padLeft(2, '0');
+      final minute = date.minute.toString().padLeft(2, '0');
+
+      return '$hour:$minute';
+    } catch (_) {
+      return '';
+    }
   }
 }

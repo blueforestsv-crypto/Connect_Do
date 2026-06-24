@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 import 'individual_chat_screen.dart';
@@ -22,6 +26,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   List<ChatListModel> filteredChats = [];
 
   bool isLoading = true;
+  bool isRefreshing = false;
   String _searchQuery = '';
 
   @override
@@ -47,22 +52,70 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _fetchChats() async {
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = true;
+      });
+
+      final data = await ChatService.getConversations();
+
+      final loadedChats =
+          data.map((item) => ChatListModel.fromBackend(item)).toList();
 
       if (!mounted) return;
 
       setState(() {
-        chats = [];
-        filteredChats = chats;
+        chats = loadedChats;
         isLoading = false;
       });
+
+      _filterChats(_searchController.text);
     } catch (e) {
       if (!mounted) return;
 
       setState(() => isLoading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error al cargar los chats")),
+        SnackBar(
+          content: Text('Error al cargar los chats: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _refreshChats() async {
+    try {
+      setState(() {
+        isRefreshing = true;
+      });
+
+      final data = await ChatService.getConversations();
+
+      final loadedChats =
+          data.map((item) => ChatListModel.fromBackend(item)).toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        chats = loadedChats;
+        isRefreshing = false;
+      });
+
+      _filterChats(_searchController.text);
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isRefreshing = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar chats: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -140,7 +193,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     color: Color(0xFF2563EB),
                   ),
                   title: Text(
-                    "Fijar chat",
+                    'Fijar chat',
                     style: TextStyle(
                       color: isDarkMode ? Colors.white : Colors.black87,
                     ),
@@ -154,7 +207,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     color: Colors.orange,
                   ),
                   title: Text(
-                    "Silenciar",
+                    'Silenciar',
                     style: TextStyle(
                       color: isDarkMode ? Colors.white : Colors.black87,
                     ),
@@ -168,7 +221,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     color: Colors.red,
                   ),
                   title: const Text(
-                    "Borrar chat",
+                    'Borrar chat',
                     style: TextStyle(color: Colors.red),
                   ),
                   onTap: () => Navigator.pop(context),
@@ -240,11 +293,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required bool isDarkMode,
     required double bottomSpace,
   }) {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(24, 80, 24, bottomSpace),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return RefreshIndicator(
+      color: const Color(0xFF10B970),
+      onRefresh: _refreshChats,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(24, 80, 24, bottomSpace),
         children: [
           Icon(
             _searchQuery.isEmpty
@@ -258,8 +312,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
           Text(
             _searchQuery.isEmpty
-                ? "No tienes mensajes aún"
-                : "No se encontraron chats",
+                ? 'No tienes mensajes aún'
+                : 'No se encontraron chats',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDarkMode ? Colors.grey[400] : Colors.grey[500],
@@ -273,8 +327,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
           Text(
             _searchQuery.isEmpty
-                ? "¡Conecta con empresas o talentos!"
-                : "Prueba con otro nombre o palabra clave.",
+                ? 'Cuando escribas a tus contactos aparecerán aquí.'
+                : 'Prueba con otro nombre o palabra clave.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
@@ -313,7 +367,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
-          "Mensajes",
+          'Mensajes',
           style: TextStyle(
             color: textColor,
             fontWeight: FontWeight.bold,
@@ -322,14 +376,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              PhosphorIconsRegular.pencilSimple,
-              color: textColor,
-              size: 26,
-            ),
-            onPressed: () {
-              // Abrir pantalla para buscar e iniciar un nuevo chat
-            },
+            icon:
+                isRefreshing
+                    ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF10B970),
+                        strokeWidth: 2,
+                      ),
+                    )
+                    : Icon(
+                      PhosphorIconsRegular.arrowsClockwise,
+                      color: textColor,
+                      size: 25,
+                    ),
+            onPressed: isRefreshing ? null : _refreshChats,
           ),
           const SizedBox(width: 10),
         ],
@@ -356,13 +418,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       isDarkMode: isDarkMode,
                       bottomSpace: bottomSpace,
                     )
-                    : ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.only(bottom: bottomSpace),
-                      itemCount: filteredChats.length,
-                      itemBuilder: (context, index) {
-                        return _buildChatTile(filteredChats[index]);
-                      },
+                    : RefreshIndicator(
+                      color: const Color(0xFF10B970),
+                      onRefresh: _refreshChats,
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: EdgeInsets.only(bottom: bottomSpace),
+                        itemCount: filteredChats.length,
+                        itemBuilder: (context, index) {
+                          return _buildChatTile(filteredChats[index]);
+                        },
+                      ),
                     ),
           ),
         ],
@@ -378,9 +444,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final Color subtitleColor =
         isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
 
+    final avatarImage = _buildAvatarImage(chat.userAvatar);
+
     return InkWell(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder:
@@ -391,6 +459,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ),
           ),
         );
+
+        if (!mounted) return;
+
+        _refreshChats();
       },
       onLongPress: () => _showOptions(context, chat.userName),
       child: Padding(
@@ -403,13 +475,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   radius: 28,
                   backgroundColor:
                       isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                  backgroundImage:
-                      chat.userAvatar.isNotEmpty
-                          ? NetworkImage(chat.userAvatar)
-                          : null,
-                  onBackgroundImageError: (_, __) {},
+                  backgroundImage: avatarImage,
                   child:
-                      chat.userAvatar.isEmpty
+                      avatarImage == null
                           ? Icon(
                             PhosphorIconsRegular.user,
                             color:
@@ -535,6 +603,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
     );
   }
+
+  ImageProvider? _buildAvatarImage(String value) {
+    if (value.isEmpty) return null;
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return NetworkImage(value);
+    }
+
+    try {
+      final cleanBase64 = value.contains(',') ? value.split(',').last : value;
+      final Uint8List bytes = base64Decode(cleanBase64);
+
+      return MemoryImage(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -561,16 +646,73 @@ class ChatListModel {
     this.isOnline = false,
   });
 
-  factory ChatListModel.fromJson(Map<String, dynamic> json) {
+  factory ChatListModel.fromBackend(Map<String, dynamic> json) {
+    final contact = json['contact'] as Map<String, dynamic>? ?? {};
+    final lastMessage = json['last_message'] as Map<String, dynamic>?;
+
+    final contactId = contact['id']?.toString() ?? '';
+    final firstName = contact['first_name']?.toString() ?? '';
+    final lastName = contact['last_name']?.toString() ?? '';
+    final email = contact['email']?.toString() ?? '';
+
+    final fullName = '$firstName $lastName'.trim();
+
+    final messageContent = lastMessage?['content']?.toString();
+
+    final createdAt = lastMessage?['created_at']?.toString();
+
     return ChatListModel(
-      chatId: json['chat_id'] ?? '',
-      userId: json['user_id'] ?? '',
-      userName: json['user_name'] ?? 'Usuario Desconocido',
-      userAvatar: json['user_avatar'] ?? '',
-      lastMessage: json['last_message'] ?? '',
-      lastMessageTime: json['last_message_time'] ?? '',
-      unreadCount: json['unread_count'] ?? 0,
-      isOnline: json['is_online'] ?? false,
+      chatId: contactId,
+      userId: contactId,
+      userName:
+          fullName.isNotEmpty
+              ? fullName
+              : email.isNotEmpty
+              ? email
+              : 'Usuario de Connect Do',
+      userAvatar: contact['profile_image_base64']?.toString() ?? '',
+      lastMessage:
+          messageContent != null && messageContent.isNotEmpty
+              ? messageContent
+              : 'Sin mensajes todavía',
+      lastMessageTime: _formatTime(createdAt),
+      unreadCount: _parseInt(json['unread_count']),
+      isOnline: true,
     );
+  }
+
+  static String _formatTime(String? rawDate) {
+    if (rawDate == null || rawDate.isEmpty) {
+      return '';
+    }
+
+    try {
+      final date = DateTime.parse(rawDate).toLocal();
+      final now = DateTime.now();
+
+      final sameDay =
+          date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day;
+
+      if (sameDay) {
+        final hour = date.hour.toString().padLeft(2, '0');
+        final minute = date.minute.toString().padLeft(2, '0');
+
+        return '$hour:$minute';
+      }
+
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value == null) return 0;
+
+    if (value is int) return value;
+
+    return int.tryParse(value.toString()) ?? 0;
   }
 }

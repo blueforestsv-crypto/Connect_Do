@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connect_do/services/profile_service.dart';
 
 class ProfileHeader extends StatefulWidget {
   final bool isDarkMode;
@@ -130,6 +131,21 @@ class _ProfileHeaderState extends State<ProfileHeader> {
 
       // Dejamos este campo viejo por compatibilidad, pero ya no dependemos de él.
       userData['profile_image_path'] = pickedImage.name;
+
+      try {
+        await ProfileService.updateMyProfile(profileImageBase64: imageBase64);
+      } catch (e) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'La foto se guardó localmente, pero no se pudo subir al backend: $e',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
 
       await prefs.setString('usuario_actual', jsonEncode(userData));
 

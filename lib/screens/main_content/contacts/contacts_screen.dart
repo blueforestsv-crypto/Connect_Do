@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/contact_request_model.dart';
 import 'package:connect_do/services/contact_service.dart';
@@ -25,12 +25,15 @@ class ContactsScreen extends StatefulWidget {
 class _ContactsScreenState extends State<ContactsScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  bool isLoading = true;
+  Timer? _searchDebounce;
 
-  String _currentUserId = '';
+  bool isLoading = true;
+  bool isSearching = false;
+
   String _searchQuery = '';
 
-  List<ContactRequestModel> _contacts = [];
+  List<Map<String, dynamic>> _searchResults = [];
+  List<Map<String, dynamic>> _contacts = [];
   List<ContactRequestModel> _receivedRequests = [];
   List<ContactRequestModel> _sentRequests = [];
 
@@ -45,6 +48,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
 
@@ -52,102 +56,190 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   void _onSearchChanged() {
+    final query = _searchController.text.trim();
+
     setState(() {
-      _searchQuery = _searchController.text.trim().toLowerCase();
+      _searchQuery = query;
+    });
+
+    _searchDebounce?.cancel();
+
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      _searchUsers();
     });
   }
 
   Future<void> _loadContactsData() async {
+    if (!mounted) return;
+
     setState(() {
       isLoading = true;
     });
 
-    final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString('usuario_actual');
+    try {
+      final contacts = await ContactService.getAcceptedContacts();
+      final received = await ContactService.getIncomingRequests();
+      final sent = await ContactService.getOutgoingRequests();
 
-    if (userJson == null) {
+      List<Map<String, dynamic>> searchResults = [];
+
+      try {
+        searchResults = await ContactService.searchUsers(query: _searchQuery);
+      } catch (_) {
+        searchResults = [];
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _contacts = contacts;
+        _receivedRequests = received;
+        _sentRequests = sent;
+        _searchResults = searchResults;
+        isLoading = false;
+      });
+    } catch (e) {
       if (!mounted) return;
 
       setState(() {
         isLoading = false;
       });
 
-      return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar contactos: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
 
-    final userData = jsonDecode(userJson);
-    final email = userData['email'] ?? 'local_user';
-
-    final requests = await ContactService.getRequests();
-
-    final contacts =
-        requests.where((request) {
-          final isMine =
-              request.requesterId == email || request.receiverId == email;
-
-          return isMine && request.status == 'accepted';
-        }).toList();
-
-    final received =
-        requests.where((request) {
-          return request.receiverId == email && request.status == 'pending';
-        }).toList();
-
-    final sent =
-        requests.where((request) {
-          return request.requesterId == email && request.status == 'pending';
-        }).toList();
-
+  Future<void> _searchUsers() async {
     if (!mounted) return;
 
     setState(() {
-      _currentUserId = email;
-      _contacts = contacts;
-      _receivedRequests = received;
-      _sentRequests = sent;
-      isLoading = false;
+      isSearching = true;
     });
+
+    try {
+      final results = await ContactService.searchUsers(query: _searchQuery);
+
+      if (!mounted) return;
+
+      setState(() {
+        _searchResults = results;
+        isSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isSearching = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al buscar usuarios: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendRequest(Map<String, dynamic> user) async {
+    final receiverId = user['id']?.toString() ?? '';
+
+    if (receiverId.isEmpty) return;
+
+    try {
+      await ContactService.sendContactRequest(receiverId: receiverId);
+
+      await _loadContactsData();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solicitud enviada'),
+          backgroundColor: Color(0xFF22C55E),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo enviar la solicitud: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _acceptRequest(ContactRequestModel request) async {
-    await ContactService.acceptRequest(request.id);
-    await _loadContactsData();
+    try {
+      await ContactService.acceptRequest(request.id);
 
-    if (!mounted) return;
+      await _loadContactsData();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Solicitud aceptada'),
-        backgroundColor: Color(0xFF22C55E),
-      ),
-    );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solicitud aceptada'),
+          backgroundColor: Color(0xFF22C55E),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo aceptar la solicitud: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _rejectRequest(ContactRequestModel request) async {
-    await ContactService.rejectRequest(request.id);
-    await _loadContactsData();
+    try {
+      await ContactService.rejectRequest(request.id);
 
-    if (!mounted) return;
+      await _loadContactsData();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Solicitud rechazada'),
-        backgroundColor: Colors.orange,
-      ),
-    );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solicitud rechazada'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo rechazar la solicitud: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  List<ContactRequestModel> get _filteredContacts {
+  List<Map<String, dynamic>> get _filteredContacts {
     if (_searchQuery.isEmpty) {
       return _contacts;
     }
 
-    return _contacts.where((request) {
-      final isRequester = request.requesterId == _currentUserId;
+    final query = _searchQuery.toLowerCase();
 
-      final name = isRequester ? request.receiverName : request.requesterName;
+    return _contacts.where((contact) {
+      final name = _buildUserName(contact).toLowerCase();
+      final email = contact['email']?.toString().toLowerCase() ?? '';
 
-      return name.toLowerCase().contains(_searchQuery);
+      return name.contains(query) || email.contains(query);
     }).toList();
   }
 
@@ -156,8 +248,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
       return _receivedRequests;
     }
 
+    final query = _searchQuery.toLowerCase();
+
     return _receivedRequests.where((request) {
-      return request.requesterName.toLowerCase().contains(_searchQuery);
+      return request.requesterName.toLowerCase().contains(query) ||
+          request.requesterId.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -166,9 +261,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
       return _sentRequests;
     }
 
+    final query = _searchQuery.toLowerCase();
+
     return _sentRequests.where((request) {
-      return request.receiverName.toLowerCase().contains(_searchQuery);
+      return request.receiverName.toLowerCase().contains(query) ||
+          request.receiverId.toLowerCase().contains(query);
     }).toList();
+  }
+
+  int get _safeInitialTabIndex {
+    if (widget.initialTabIndex < 0) return 0;
+    if (widget.initialTabIndex > 3) return 3;
+
+    return widget.initialTabIndex;
   }
 
   @override
@@ -181,7 +286,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
     return Scaffold(
       backgroundColor: bgColor,
       resizeToAvoidBottomInset: true,
-
       appBar:
           widget.showAppBar
               ? AppBar(
@@ -198,15 +302,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 ),
               )
               : null,
-
       body:
           isLoading
               ? const Center(
                 child: CircularProgressIndicator(color: Color(0xFF22C55E)),
               )
               : DefaultTabController(
-                length: 3,
-                initialIndex: widget.initialTabIndex,
+                length: 4,
+                initialIndex: _safeInitialTabIndex,
                 child: Column(
                   children: [
                     _buildSearchBar(isDarkMode),
@@ -214,6 +317,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     Container(
                       color: bgColor,
                       child: TabBar(
+                        isScrollable: true,
                         indicatorColor: const Color(0xFF2563EB),
                         labelColor:
                             isDarkMode ? Colors.white : const Color(0xFF2563EB),
@@ -222,6 +326,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                                 ? Colors.grey.shade400
                                 : const Color(0xFF22C55E),
                         tabs: [
+                          Tab(text: 'Personas (${_searchResults.length})'),
                           Tab(text: 'Contactos (${_filteredContacts.length})'),
                           Tab(
                             text:
@@ -237,6 +342,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     Expanded(
                       child: TabBarView(
                         children: [
+                          _buildPeopleSearchList(textColor, isDarkMode),
                           _buildContactsList(textColor, isDarkMode),
                           _buildReceivedRequests(textColor, isDarkMode),
                           _buildSentRequests(textColor, isDarkMode),
@@ -272,9 +378,22 @@ class _ContactsScreenState extends State<ContactsScreen> {
           style: TextStyle(color: textColor),
           cursorColor: const Color(0xFF22C55E),
           decoration: InputDecoration(
-            hintText: 'Buscar contactos...',
+            hintText: 'Buscar personas o contactos...',
             hintStyle: TextStyle(color: hintColor),
-            prefixIcon: const Icon(Icons.search, color: Color(0xFF2563EB)),
+            prefixIcon:
+                isSearching
+                    ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF2563EB),
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    )
+                    : const Icon(Icons.search, color: Color(0xFF2563EB)),
             suffixIcon:
                 _searchQuery.isNotEmpty
                     ? IconButton(
@@ -298,6 +417,125 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPeopleSearchList(Color textColor, bool isDarkMode) {
+    final people = _searchResults;
+
+    if (people.isEmpty) {
+      if (_searchQuery.isNotEmpty) {
+        return _buildEmptyState(
+          icon: Icons.search_off,
+          title: 'No encontramos usuarios',
+          subtitle: 'Prueba buscando por nombre o correo.',
+          isDarkMode: isDarkMode,
+        );
+      }
+
+      return _buildEmptyState(
+        icon: Icons.person_search_outlined,
+        title: 'Busca personas registradas',
+        subtitle: 'Aquí aparecerán usuarios reales del backend.',
+        isDarkMode: isDarkMode,
+      );
+    }
+
+    return RefreshIndicator(
+      color: const Color(0xFF22C55E),
+      onRefresh: _loadContactsData,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          ResponsiveHelper.appBottomNavSpace(context),
+        ),
+        itemCount: people.length,
+        itemBuilder: (context, index) {
+          final user = people[index];
+
+          return _buildSearchUserTile(
+            user: user,
+            textColor: textColor,
+            isDarkMode: isDarkMode,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSearchUserTile({
+    required Map<String, dynamic> user,
+    required Color textColor,
+    required bool isDarkMode,
+  }) {
+    final name = _buildUserName(user);
+    final email = user['email']?.toString() ?? '';
+    final career = user['career']?.toString() ?? '';
+    final photo = user['profile_image_base64']?.toString() ?? '';
+    final contactStatus = user['contact_status']?.toString();
+    final requestId = user['request_id']?.toString();
+
+    final subtitle =
+        career.isNotEmpty
+            ? career
+            : email.isNotEmpty
+            ? email
+            : 'Usuario';
+
+    Widget trailing;
+
+    if (contactStatus == null ||
+        contactStatus.isEmpty ||
+        contactStatus == 'null') {
+      trailing = ElevatedButton(
+        onPressed: () => _sendRequest(user),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2563EB),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+        child: const Text(
+          'Agregar',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      );
+    } else if (contactStatus == 'pending') {
+      trailing = _statusChip(
+        label:
+            requestId == null || requestId.isEmpty ? 'Pendiente' : 'Pendiente',
+        color: Colors.orange,
+        isDarkMode: isDarkMode,
+      );
+    } else if (contactStatus == 'accepted') {
+      trailing = const Icon(Icons.check_circle, color: Color(0xFF22C55E));
+    } else if (contactStatus == 'rejected') {
+      trailing = _statusChip(
+        label: 'Rechazada',
+        color: Colors.red,
+        isDarkMode: isDarkMode,
+      );
+    } else {
+      trailing = _statusChip(
+        label: contactStatus,
+        color: Colors.grey,
+        isDarkMode: isDarkMode,
+      );
+    }
+
+    return _buildUserTile(
+      name: name,
+      photo: photo,
+      subtitle: subtitle,
+      trailing: trailing,
+      textColor: textColor,
+      isDarkMode: isDarkMode,
     );
   }
 
@@ -335,20 +573,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ),
         itemCount: contacts.length,
         itemBuilder: (context, index) {
-          final request = contacts[index];
+          final contact = contacts[index];
 
-          final isRequester = request.requesterId == _currentUserId;
-
-          final name =
-              isRequester ? request.receiverName : request.requesterName;
-
-          final photo =
-              isRequester ? request.receiverPhoto : request.requesterPhoto;
+          final name = _buildUserName(contact);
+          final email = contact['email']?.toString() ?? '';
+          final career = contact['career']?.toString() ?? '';
+          final photo = contact['profile_image_base64']?.toString() ?? '';
 
           return _buildUserTile(
             name: name,
             photo: photo,
-            subtitle: 'Contacto',
+            subtitle: career.isNotEmpty ? career : email,
             trailing: const Icon(Icons.check_circle, color: Color(0xFF22C55E)),
             textColor: textColor,
             isDarkMode: isDarkMode,
@@ -444,20 +679,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
             name: request.receiverName,
             photo: request.receiverPhoto,
             subtitle: 'Solicitud pendiente',
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isDarkMode ? Colors.white10 : Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Pendiente',
-                style: TextStyle(
-                  color: isDarkMode ? Colors.grey.shade300 : Colors.grey[700],
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            trailing: _statusChip(
+              label: 'Pendiente',
+              color: Colors.orange,
+              isDarkMode: isDarkMode,
             ),
             textColor: textColor,
             isDarkMode: isDarkMode,
@@ -585,8 +810,32 @@ class _ContactsScreenState extends State<ContactsScreen> {
           style: TextStyle(
             color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         trailing: trailing,
+      ),
+    );
+  }
+
+  Widget _statusChip({
+    required String label,
+    required Color color,
+    required bool isDarkMode,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDarkMode ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -600,15 +849,27 @@ class _ContactsScreenState extends State<ContactsScreen> {
       );
     }
 
-    if (photo.startsWith('/')) {
-      return CircleAvatar(radius: 25, backgroundImage: FileImage(File(photo)));
+    if (photo.startsWith('http://') || photo.startsWith('https://')) {
+      return CircleAvatar(
+        radius: 25,
+        backgroundImage: NetworkImage(photo),
+        onBackgroundImageError: (_, __) {},
+      );
     }
 
-    return CircleAvatar(
-      radius: 25,
-      backgroundImage: NetworkImage(photo),
-      onBackgroundImageError: (_, __) {},
-    );
+    try {
+      final cleanBase64 = photo.contains(',') ? photo.split(',').last : photo;
+
+      final Uint8List bytes = base64Decode(cleanBase64);
+
+      return CircleAvatar(radius: 25, backgroundImage: MemoryImage(bytes));
+    } catch (_) {
+      return const CircleAvatar(
+        radius: 25,
+        backgroundColor: Color(0xFFE5E7EB),
+        child: Icon(Icons.person, color: Colors.grey),
+      );
+    }
   }
 
   Widget _buildEmptyState({
@@ -663,5 +924,23 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ],
       ),
     );
+  }
+
+  String _buildUserName(Map<String, dynamic> user) {
+    final firstName = user['first_name']?.toString() ?? '';
+    final lastName = user['last_name']?.toString() ?? '';
+    final email = user['email']?.toString() ?? '';
+
+    final fullName = '$firstName $lastName'.trim();
+
+    if (fullName.isNotEmpty) {
+      return fullName;
+    }
+
+    if (email.isNotEmpty) {
+      return email;
+    }
+
+    return 'Usuario de Connect Do';
   }
 }
