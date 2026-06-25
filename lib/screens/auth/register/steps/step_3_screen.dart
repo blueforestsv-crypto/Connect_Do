@@ -199,7 +199,6 @@ class _Step3ScreenState extends State<Step3Screen> {
     }
 
     finalData['profile_image_base64'] = profileImageBase64;
-
     finalData['profile_image_path'] = _profileImage?.path ?? '';
     finalData['profile_image_name'] = _profileImageName ?? '';
 
@@ -216,8 +215,12 @@ class _Step3ScreenState extends State<Step3Screen> {
 
     final prefs = await SharedPreferences.getInstance();
 
+    // Guardamos datos temporales del registro.
+    // NO activamos sesión todavía porque aún no hay token real.
     await prefs.setString('usuario_actual', jsonEncode(finalData));
-    await prefs.setBool('sesion_activa', true);
+    await prefs.setBool('sesion_activa', false);
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
 
     if (!mounted) return;
 

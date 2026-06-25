@@ -15,7 +15,7 @@ class AuthService {
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode({'email': email.trim(), 'password': password}),
     );
 
     if (response.statusCode != 200) {
@@ -26,24 +26,85 @@ class AuthService {
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-    final accessToken = data['access_token']?.toString();
-    final refreshToken = data['refresh_token']?.toString();
+    final accessToken = data['access_token']?.toString() ?? '';
+    final refreshToken = data['refresh_token']?.toString() ?? '';
 
-    if (accessToken == null || accessToken.isEmpty) {
+    if (accessToken.isEmpty) {
       throw Exception('El backend no devolvió access_token.');
     }
 
+    await _saveSession(accessToken: accessToken, refreshToken: refreshToken);
+
+    await _saveCurrentUser(accessToken);
+  }
+
+  static Future<void> register({required Map<String, dynamic> userData}) async {
+    final email = userData['email']?.toString().trim() ?? '';
+    final password = userData['password']?.toString() ?? '';
+
+    final firstName =
+        userData['firstName']?.toString().trim() ??
+        userData['first_name']?.toString().trim() ??
+        '';
+
+    final lastName =
+        userData['lastName']?.toString().trim() ??
+        userData['last_name']?.toString().trim() ??
+        '';
+
+    if (email.isEmpty ||
+        password.isEmpty ||
+        firstName.isEmpty ||
+        lastName.isEmpty) {
+      throw Exception('Faltan datos obligatorios para registrar la cuenta.');
+    }
+
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'first_name': firstName,
+        'last_name': lastName,
+      }),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Error al registrar usuario: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
+  static Future<void> registerAndLogin({
+    required Map<String, dynamic> userData,
+  }) async {
+    final email = userData['email']?.toString().trim() ?? '';
+    final password = userData['password']?.toString() ?? '';
+
+    await register(userData: userData);
+
+    await login(email: email, password: password);
+
+    await _mergeLocalUserData(userData);
+
+    await _syncProfileWithBackend(userData);
+  }
+
+  static Future<void> _saveSession({
+    required String accessToken,
+    String refreshToken = '',
+  }) async {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setString('access_token', accessToken);
 
-    if (refreshToken != null && refreshToken.isNotEmpty) {
+    if (refreshToken.isNotEmpty) {
       await prefs.setString('refresh_token', refreshToken);
     }
 
     await prefs.setBool('sesion_activa', true);
-
-    await _saveCurrentUser(accessToken);
   }
 
   static Future<void> _saveCurrentUser(String accessToken) async {
@@ -55,12 +116,23 @@ class AuthService {
       },
     );
 
-    if (response.statusCode != 200) {
-      return;
-    }
+    if (response.statusCode != 200) return;
 
     final userData = jsonDecode(response.body) as Map<String, dynamic>;
 
+    final backendUserData = <String, dynamic>{
+      'id': userData['id']?.toString() ?? '',
+      'email': userData['email']?.toString() ?? '',
+      'firstName': userData['first_name']?.toString() ?? '',
+      'lastName': userData['last_name']?.toString() ?? '',
+      'first_name': userData['first_name']?.toString() ?? '',
+      'last_name': userData['last_name']?.toString() ?? '',
+    };
+
+    await _mergeLocalUserData(backendUserData);
+  }
+
+  static Future<void> _mergeLocalUserData(Map<String, dynamic> newData) async {
     final prefs = await SharedPreferences.getInstance();
 
     final existingUserJson = prefs.getString('usuario_actual');
@@ -75,54 +147,58 @@ class AuthService {
       }
     }
 
-    final backendUserData = <String, dynamic>{
-      'id': userData['id']?.toString() ?? '',
-      'email': userData['email']?.toString() ?? '',
-      'firstName': userData['first_name']?.toString() ?? '',
-      'lastName': userData['last_name']?.toString() ?? '',
-    };
-
-    final mergedUserData = <String, dynamic>{
-      ...existingUserData,
-      ...backendUserData,
-    };
-
-    mergedUserData['profile_image_base64'] =
-        existingUserData['profile_image_base64']?.toString() ?? '';
-
-    mergedUserData['profile_image_path'] =
-        existingUserData['profile_image_path']?.toString() ?? '';
-
-    mergedUserData['google_photo_url'] =
-        existingUserData['google_photo_url']?.toString() ?? '';
-
-    mergedUserData['cv_file_base64'] =
-        existingUserData['cv_file_base64']?.toString() ?? '';
-
-    mergedUserData['cv_file_name'] =
-        existingUserData['cv_file_name']?.toString() ?? '';
-
-    mergedUserData['cv_file_path'] =
-        existingUserData['cv_file_path']?.toString() ?? '';
-
-    mergedUserData['cv_path'] = existingUserData['cv_path']?.toString() ?? '';
-
-    mergedUserData['cv_file_size'] = existingUserData['cv_file_size'] ?? 0;
-
-    mergedUserData['career'] = existingUserData['career']?.toString() ?? '';
-
-    mergedUserData['cycle'] = existingUserData['cycle']?.toString() ?? '';
-
-    mergedUserData['phone'] = existingUserData['phone']?.toString() ?? '';
-
-    mergedUserData['description'] =
-        existingUserData['description']?.toString() ?? '';
-
-    mergedUserData['portfolio_link'] =
-        existingUserData['portfolio_link']?.toString() ?? '';
-
-    mergedUserData['skills'] = existingUserData['skills'] ?? [];
+    final mergedUserData = <String, dynamic>{...existingUserData, ...newData};
 
     await prefs.setString('usuario_actual', jsonEncode(mergedUserData));
+  }
+
+  static Future<void> _syncProfileWithBackend(
+    Map<String, dynamic> userData,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token') ?? '';
+
+      if (accessToken.isEmpty) return;
+
+      final body = <String, dynamic>{
+        'phone': userData['phone']?.toString(),
+        'university': userData['university']?.toString(),
+        'academic_level': userData['level']?.toString(),
+        'career': userData['career']?.toString(),
+        'academic_cycle': userData['cycle']?.toString(),
+        'bio': userData['description']?.toString(),
+        'portfolio_url': userData['portfolio_link']?.toString(),
+        'profile_image_base64': userData['profile_image_base64']?.toString(),
+        'cv_url': userData['cv_file_name']?.toString(),
+      };
+
+      body.removeWhere((key, value) {
+        if (value == null) return true;
+        if (value is String && value.trim().isEmpty) return true;
+        return false;
+      });
+
+      if (body.isEmpty) return;
+
+      await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/profiles/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (_) {
+      // No rompemos el registro si el perfil no se pudo sincronizar.
+    }
+  }
+
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
+    await prefs.setBool('sesion_activa', false);
   }
 }

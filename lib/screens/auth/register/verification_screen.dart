@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
+import 'package:connect_do/services/auth_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 class VerificationScreen extends StatefulWidget {
@@ -12,7 +16,6 @@ class VerificationScreen extends StatefulWidget {
 }
 
 class _VerificationScreenState extends State<VerificationScreen> {
-  // Controladores y focos para los 4 dígitos
   final List<TextEditingController> _controllers = List.generate(
     4,
     (_) => TextEditingController(),
@@ -36,22 +39,18 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   void _onChanged(String value, int index) {
-    // Mover al siguiente cuadro al escribir
     if (value.length == 1 && index < 3) {
       _focusNodes[index + 1].requestFocus();
     }
 
-    // Regresar al anterior al borrar
     if (value.isEmpty && index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
   }
 
-  // --- FUNCIÓN DE VERIFICACIÓN (MODO DESARROLLO) ---
   Future<void> _verifyCode() async {
     final codigoCompleto = _controllers.map((c) => c.text).join();
 
-    // 1. Validar que ingresó los 4 números
     if (codigoCompleto.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -62,29 +61,56 @@ class _VerificationScreenState extends State<VerificationScreen> {
       return;
     }
 
-    // 2. Mostrar estado de carga
     setState(() => _isLoading = true);
 
-    // 3. Simular que va al servidor a revisar
-    await Future.delayed(const Duration(milliseconds: 1500));
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    if (!mounted) return;
+      final datosJson = prefs.getString('usuario_actual');
 
-    // 4. MODO BYPASS: ¡Entra con cualquier código!
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("¡Cuenta verificada con éxito!"),
-        backgroundColor: Color(0xFF22C55E),
-        duration: Duration(seconds: 2),
-      ),
-    );
+      if (datosJson == null || datosJson.isEmpty) {
+        throw Exception('No se encontraron datos del registro.');
+      }
 
-    // 5. Destruir historial y mandarlo al Home
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-      (Route<dynamic> route) => false,
-    );
+      final Map<String, dynamic> userData =
+          jsonDecode(datosJson) as Map<String, dynamic>;
+
+      await AuthService.registerAndLogin(userData: userData);
+
+      final token = prefs.getString('access_token') ?? '';
+
+      if (token.isEmpty) {
+        throw Exception('No se pudo guardar el token de sesión.');
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("¡Cuenta verificada y sesión iniciada!"),
+          backgroundColor: Color(0xFF22C55E),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        (Route<dynamic> route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo completar el registro: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
@@ -101,7 +127,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
           children: [
             const SizedBox(height: 30),
 
-            // HEADER
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Column(
@@ -141,7 +166,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
             const SizedBox(height: 35),
 
-            // CONTENEDOR DE ACCIÓN
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -167,7 +191,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
                       const SizedBox(height: 25),
 
-                      // INPUTS OTP
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: List.generate(
@@ -197,7 +220,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
                       const SizedBox(height: 70),
 
-                      // BOTÓN FINALIZAR
                       SizedBox(
                         width: double.infinity,
                         height: 55,
