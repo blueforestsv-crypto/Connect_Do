@@ -60,4 +60,21 @@ class PublicationApiService {
         .map(PublicationModel.fromJson)
         .toList();
   }
+
+  Future<void> deletePublication(String publicationId) async {
+    final token = await _getAccessToken();
+
+    final response = await http.delete(
+      ApiConfig.uri('/publications/$publicationId'),
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode != 200 &&
+        response.statusCode != 202 &&
+        response.statusCode != 204) {
+      throw Exception(
+        'Error al eliminar publicación: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
 }

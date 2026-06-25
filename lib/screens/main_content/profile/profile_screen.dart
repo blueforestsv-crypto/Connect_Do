@@ -66,7 +66,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Cerramos sesión real para que no quede token activo en el front.
     await prefs.setBool('sesion_activa', false);
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
@@ -101,10 +100,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         length: 4,
         child: Column(
           children: [
-            // ================= HEADER =================
             ProfileHeader(isDarkMode: _isDarkMode, onMenuTap: _showMainMenu),
 
-            // ================= TABS =================
             Container(
               color: bgColor,
               child: TabBar(
@@ -121,7 +118,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            // ================= TAB CONTENT =================
             Expanded(
               child: TabBarView(
                 children: [
@@ -833,21 +829,32 @@ class _UserPublicationsTabState extends State<UserPublicationsTab> {
   }
 
   Future<void> _deletePublication(PublicationModel post) async {
-    // Eliminación visual por ahora.
-    // Luego conectamos esto con DELETE /publications/{id}.
-    setState(() {
-      userPosts.removeWhere((item) => item.id == post.id);
-    });
+    try {
+      await _publicationApiService.deletePublication(post.id);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Publicación eliminada visualmente'),
-        backgroundColor: Colors.red,
-        duration: Duration(seconds: 2),
-      ),
-    );
+      setState(() {
+        userPosts.removeWhere((item) => item.id == post.id);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Publicación eliminada correctamente'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo eliminar la publicación: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override

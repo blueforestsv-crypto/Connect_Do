@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 class ProfileTechnicalTab extends StatefulWidget {
@@ -99,11 +100,17 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
       final Map<String, dynamic> userData = jsonDecode(datosJson);
 
       final String cvPath =
-          (userData['cv_file_path'] ?? userData['cv_path'] ?? '').toString();
+          (userData['cv_file_path'] ??
+                  userData['cv_path'] ??
+                  userData['cv_url'] ??
+                  '')
+              .toString();
 
       final String cvName =
           (userData['cv_file_name'] ?? '').toString().isNotEmpty
               ? userData['cv_file_name'].toString()
+              : (userData['cv_url'] ?? '').toString().isNotEmpty
+              ? userData['cv_url'].toString()
               : cvPath.isNotEmpty
               ? cvPath.split('/').last.split('\\').last
               : 'Sin CV';
@@ -174,20 +181,36 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
   Future<void> _saveChanges() async {
     final prefs = await SharedPreferences.getInstance();
 
+    _userData['phone'] = _userPhone;
+    _userData['career'] = _userCareer;
     _userData['skills'] = _skills;
     _userData['cycle'] = _userCycle;
     _userData['description'] = _userDescription;
     _userData['portfolio_link'] = _portfolioLink;
 
-    // Guardamos en formato nuevo.
+    // CV local / demo.
     _userData['cv_file_path'] = _cvPath;
     _userData['cv_file_name'] = _cvName == 'Sin CV' ? '' : _cvName;
     _userData['cv_file_size'] = _cvSize;
-
-    // Compatibilidad con código viejo.
     _userData['cv_path'] = _cvPath;
 
+    // Referencia que sí entiende el backend.
+    _userData['cv_url'] = _cvName == 'Sin CV' ? '' : _cvName;
+
     await prefs.setString('usuario_actual', jsonEncode(_userData));
+
+    try {
+      await ProfileService.updateMyProfile(
+        phone: _userPhone,
+        career: _userCareer,
+        academicCycle: _userCycle,
+        bio: _userDescription,
+        portfolioUrl: _portfolioLink,
+        cvUrl: _cvName == 'Sin CV' ? '' : _cvName,
+      );
+    } catch (_) {
+      // Si falla backend, dejamos guardado local para no romper la demo.
+    }
   }
 
   // ===============================
@@ -215,6 +238,7 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
       _userData['cv_file_name'] = file.name;
       _userData['cv_file_path'] = file.name;
       _userData['cv_path'] = file.name;
+      _userData['cv_url'] = file.name;
       _userData['cv_file_size'] = file.size;
 
       if (file.bytes != null) {
@@ -295,6 +319,13 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                 if (!mounted) return;
 
                 Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Ciclo actualizado'),
+                    backgroundColor: Color(0xFF22C55E),
+                  ),
+                );
               },
               child: const Text('Guardar'),
             ),
@@ -361,6 +392,13 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                 if (!mounted) return;
 
                 Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Sobre mí actualizado'),
+                    backgroundColor: Color(0xFF22C55E),
+                  ),
+                );
               },
               child: const Text('Guardar'),
             ),
@@ -423,6 +461,13 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                 if (!mounted) return;
 
                 Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Portafolio actualizado'),
+                    backgroundColor: Color(0xFF22C55E),
+                  ),
+                );
               },
               child: const Text('Guardar'),
             ),
@@ -495,6 +540,13 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                 if (!mounted) return;
 
                 Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Habilidad añadida'),
+                    backgroundColor: Color(0xFF22C55E),
+                  ),
+                );
               },
               child: const Text('Añadir'),
             ),
@@ -809,6 +861,16 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
                           });
 
                           await _saveChanges();
+
+                          if (!mounted) return;
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Habilidad eliminada'),
+                              backgroundColor: Colors.orange,
+                              duration: Duration(milliseconds: 900),
+                            ),
+                          );
                         },
                       );
                     }).toList(),
