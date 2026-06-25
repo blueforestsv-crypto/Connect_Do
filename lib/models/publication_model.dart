@@ -13,9 +13,9 @@ class PublicationMediaItem {
     this.sizeBytes,
   });
 
-  bool get isImage => type == 'image';
+  bool get isImage => type.toLowerCase() == 'image';
 
-  bool get isVideo => type == 'video';
+  bool get isVideo => type.toLowerCase() == 'video';
 
   Map<String, dynamic> toJson() {
     return {
@@ -33,11 +33,11 @@ class PublicationMediaItem {
       base64: json['base64']?.toString() ?? '',
       fileName: json['file_name']?.toString() ?? json['fileName']?.toString(),
       mimeType: json['mime_type']?.toString() ?? json['mimeType']?.toString(),
-      sizeBytes: _parseInt(json['size_bytes'] ?? json['sizeBytes']),
+      sizeBytes: _parseNullableInt(json['size_bytes'] ?? json['sizeBytes']),
     );
   }
 
-  static int? _parseInt(dynamic value) {
+  static int? _parseNullableInt(dynamic value) {
     if (value == null) return null;
 
     if (value is int) return value;
@@ -61,13 +61,13 @@ class PublicationModel {
   final String? modality;
   final String visibility;
 
-  // Imagen antigua
+  // Imagen antigua / compatibilidad
   final String? imagePath;
 
   // Multimedia nueva
   final List<PublicationMediaItem> mediaItems;
 
-  // Archivo / video / documento local antiguo
+  // Archivo / video / documento antiguo
   final String? filePath;
   final String? fileName;
   final String? fileType;
@@ -104,16 +104,6 @@ class PublicationModel {
     return description;
   }
 
-  bool get hasMedia {
-    return mediaItems.isNotEmpty;
-  }
-
-  PublicationMediaItem? get firstMedia {
-    if (mediaItems.isEmpty) return null;
-
-    return mediaItems.first;
-  }
-
   String get typeLabel {
     switch (type) {
       case 'internship':
@@ -133,19 +123,6 @@ class PublicationModel {
     }
   }
 
-  String get visibilityLabel {
-    switch (visibility) {
-      case 'public':
-        return 'Público';
-      case 'contacts':
-        return 'Solo contactos';
-      case 'private':
-        return 'Privado';
-      default:
-        return 'Solo contactos';
-    }
-  }
-
   String get modalityLabel {
     switch (modality) {
       case 'remote':
@@ -159,12 +136,41 @@ class PublicationModel {
     }
   }
 
+  String get visibilityLabel {
+    switch (visibility) {
+      case 'public':
+        return 'Pública';
+      case 'contacts':
+        return 'Contactos';
+      case 'private':
+        return 'Privada';
+      default:
+        return 'Contactos';
+    }
+  }
+
   bool get hasLocation {
     return location != null && location!.trim().isNotEmpty;
   }
 
   bool get hasModality {
     return modalityLabel.trim().isNotEmpty;
+  }
+
+  bool get hasUserPhoto {
+    return userPhoto.trim().isNotEmpty;
+  }
+
+  bool get hasMedia {
+    return mediaItems.isNotEmpty;
+  }
+
+  PublicationMediaItem? get firstMedia {
+    if (mediaItems.isEmpty) {
+      return null;
+    }
+
+    return mediaItems.first;
   }
 
   Map<String, dynamic> toJson() {
@@ -193,10 +199,19 @@ class PublicationModel {
     final author = json['author'];
 
     String resolvedUserName = json['userName']?.toString() ?? '';
+    String resolvedUserPhoto = json['userPhoto']?.toString() ?? '';
 
     if (author is Map<String, dynamic>) {
-      final firstName = author['first_name']?.toString() ?? '';
-      final lastName = author['last_name']?.toString() ?? '';
+      final firstName =
+          author['first_name']?.toString() ??
+          author['firstName']?.toString() ??
+          '';
+
+      final lastName =
+          author['last_name']?.toString() ??
+          author['lastName']?.toString() ??
+          '';
+
       final email = author['email']?.toString() ?? '';
 
       resolvedUserName = '$firstName $lastName'.trim();
@@ -204,48 +219,83 @@ class PublicationModel {
       if (resolvedUserName.isEmpty) {
         resolvedUserName = email;
       }
+
+      resolvedUserPhoto =
+          author['profile_image_base64']?.toString() ??
+          author['profileImageBase64']?.toString() ??
+          author['avatar_url']?.toString() ??
+          author['avatarUrl']?.toString() ??
+          resolvedUserPhoto;
     }
 
     if (resolvedUserName.isEmpty) {
       resolvedUserName = 'Usuario de Connect Do';
     }
 
-    final rawMediaItems = json['media_items'] ?? json['mediaItems'];
-
-    final List<PublicationMediaItem> parsedMediaItems = [];
-
-    if (rawMediaItems is List) {
-      for (final item in rawMediaItems) {
-        if (item is Map<String, dynamic>) {
-          parsedMediaItems.add(PublicationMediaItem.fromJson(item));
-        }
-      }
-    }
+    final List<PublicationMediaItem> parsedMediaItems = _parseMediaItems(
+      json['media_items'] ?? json['mediaItems'],
+    );
 
     return PublicationModel(
       id: json['id']?.toString() ?? '',
       userName: resolvedUserName,
-      userPhoto: json['userPhoto']?.toString() ?? '',
+      userPhoto: resolvedUserPhoto,
       title: json['title']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       type: json['type']?.toString() ?? 'general',
-      location: json['location']?.toString(),
-      modality: json['modality']?.toString(),
+      location: _parseNullableString(json['location']),
+      modality: _parseNullableString(json['modality']),
       visibility: json['visibility']?.toString() ?? 'contacts',
 
-      imagePath: json['image_url']?.toString() ?? json['imagePath']?.toString(),
+      // Backend usa image_url, local usaba imagePath
+      imagePath:
+          _parseNullableString(json['image_url']) ??
+          _parseNullableString(json['imagePath']),
 
       mediaItems: parsedMediaItems,
 
-      filePath: json['filePath']?.toString(),
-      fileName: json['fileName']?.toString(),
-      fileType: json['fileType']?.toString(),
+      filePath: _parseNullableString(json['filePath']),
+      fileName: _parseNullableString(json['fileName']),
+      fileType: _parseNullableString(json['fileType']),
 
+      // Backend usa created_at, local usaba createdAt
       createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
 
       likes: _parseInt(json['likes']),
       comments: _parseInt(json['comments']),
     );
+  }
+
+  static List<PublicationMediaItem> _parseMediaItems(dynamic value) {
+    if (value == null) {
+      return [];
+    }
+
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) {
+          return PublicationMediaItem.fromJson(Map<String, dynamic>.from(item));
+        })
+        .where((item) {
+          return item.type.trim().isNotEmpty && item.base64.trim().isNotEmpty;
+        })
+        .toList();
+  }
+
+  static String? _parseNullableString(dynamic value) {
+    if (value == null) return null;
+
+    final text = value.toString();
+
+    if (text.trim().isEmpty || text == 'null') {
+      return null;
+    }
+
+    return text;
   }
 
   static DateTime _parseDateTime(dynamic value) {

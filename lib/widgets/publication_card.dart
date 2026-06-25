@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/widgets/feed/publication_actions.dart';
-import 'package:connect_do/widgets/feed/publication_header.dart';
 import 'package:connect_do/widgets/feed/publication_content.dart';
+import 'package:connect_do/widgets/feed/publication_header.dart';
 
 class PublicationCard extends StatelessWidget {
   final PublicationModel post;
@@ -59,14 +59,14 @@ class _PublicationMediaPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media = post.firstMedia;
+    final PublicationMediaItem? media = post.firstMedia;
 
     if (media == null) {
       return const SizedBox.shrink();
     }
 
     if (media.isImage) {
-      final imageBytes = _decodeBase64(media.base64);
+      final Uint8List? imageBytes = _decodeBase64(media.base64);
 
       if (imageBytes == null) {
         return _buildBrokenMedia(context, 'No se pudo cargar la imagen.');
@@ -78,6 +78,9 @@ class _PublicationMediaPreview extends StatelessWidget {
           imageBytes,
           width: double.infinity,
           fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildBrokenMedia(context, 'No se pudo mostrar la imagen.');
+          },
         ),
       );
     }
@@ -111,7 +114,9 @@ class _PublicationMediaPreview extends StatelessWidget {
             backgroundColor: Color(0xFF2563EB),
             child: Icon(Icons.play_arrow_rounded, color: Colors.white),
           ),
+
           const SizedBox(width: 12),
+
           Expanded(
             child: Text(
               media.fileName ?? 'Video adjunto',
@@ -140,7 +145,9 @@ class _PublicationMediaPreview extends StatelessWidget {
       child: Row(
         children: [
           const Icon(Icons.broken_image_outlined, color: Colors.red),
+
           const SizedBox(width: 10),
+
           Expanded(
             child: Text(
               message,
@@ -156,7 +163,15 @@ class _PublicationMediaPreview extends StatelessWidget {
 
   Uint8List? _decodeBase64(String value) {
     try {
-      final cleanBase64 = value.contains(',') ? value.split(',').last : value;
+      String cleanBase64 = value.trim();
+
+      if (cleanBase64.contains(',')) {
+        cleanBase64 = cleanBase64.split(',').last;
+      }
+
+      if (cleanBase64.isEmpty) {
+        return null;
+      }
 
       return base64Decode(cleanBase64);
     } catch (_) {

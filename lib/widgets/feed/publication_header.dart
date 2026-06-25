@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -65,46 +66,88 @@ class PublicationHeader extends StatelessWidget {
     final Color avatarBgColor =
         isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200;
 
-    if (post.userPhoto.isEmpty) {
+    final String photo = post.userPhoto.trim();
+
+    if (photo.isEmpty || photo == 'null') {
+      return _defaultAvatar(isDarkMode, avatarBgColor);
+    }
+
+    // Foto en URL
+    if (photo.startsWith('http://') || photo.startsWith('https://')) {
       return CircleAvatar(
         radius: 24,
         backgroundColor: avatarBgColor,
-        child: Icon(
-          Icons.person,
-          color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
-        ),
+        backgroundImage: NetworkImage(photo),
+        onBackgroundImageError: (_, __) {},
       );
     }
 
-    // Foto local del dispositivo
-    if (post.userPhoto.startsWith('/')) {
-      final file = File(post.userPhoto);
+    // Foto en base64
+    final Uint8List? imageBytes = _decodeBase64Image(photo);
 
-      if (file.existsSync()) {
-        return CircleAvatar(
-          radius: 24,
-          backgroundColor: avatarBgColor,
-          backgroundImage: FileImage(file),
-        );
-      }
-
+    if (imageBytes != null) {
       return CircleAvatar(
         radius: 24,
         backgroundColor: avatarBgColor,
-        child: Icon(
-          Icons.person,
-          color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
-        ),
+        backgroundImage: MemoryImage(imageBytes),
       );
     }
 
-    // Foto desde internet
+    return _defaultAvatar(isDarkMode, avatarBgColor);
+  }
+
+  Widget _defaultAvatar(bool isDarkMode, Color avatarBgColor) {
     return CircleAvatar(
       radius: 24,
       backgroundColor: avatarBgColor,
-      backgroundImage: NetworkImage(post.userPhoto),
-      onBackgroundImageError: (_, __) {},
+      child: Text(
+        _getInitials(),
+        style: TextStyle(
+          color: isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+      ),
     );
+  }
+
+  Uint8List? _decodeBase64Image(String value) {
+    try {
+      String cleanValue = value.trim();
+
+      if (cleanValue.contains(',')) {
+        cleanValue = cleanValue.split(',').last;
+      }
+
+      if (cleanValue.isEmpty) {
+        return null;
+      }
+
+      return base64Decode(cleanValue);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _getInitials() {
+    final cleanName = post.userName.trim();
+
+    if (cleanName.isEmpty) {
+      return 'U';
+    }
+
+    final parts =
+        cleanName.split(' ').where((part) => part.trim().isNotEmpty).toList();
+
+    if (parts.isEmpty) {
+      return 'U';
+    }
+
+    if (parts.length == 1) {
+      return parts.first[0].toUpperCase();
+    }
+
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
   // ===============================

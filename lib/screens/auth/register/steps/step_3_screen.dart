@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,9 @@ class _Step3ScreenState extends State<Step3Screen> {
   final TextEditingController _phoneController = TextEditingController();
 
   File? _profileImage;
+  Uint8List? _profileImageBytes;
+  String? _profileImageName;
+
   String? _googlePhotoUrl;
 
   String? _cvName;
@@ -52,20 +56,27 @@ class _Step3ScreenState extends State<Step3Screen> {
     super.dispose();
   }
 
-  // ===============================
-  // SELECCIONAR FOTO DE PERFIL
-  // ===============================
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
         imageQuality: 80,
+        maxWidth: 900,
       );
 
       if (pickedFile == null) return;
 
+      final Uint8List bytes = await pickedFile.readAsBytes();
+
       setState(() {
-        _profileImage = File(pickedFile.path);
+        _profileImageBytes = bytes;
+        _profileImageName = pickedFile.name;
+
+        try {
+          _profileImage = File(pickedFile.path);
+        } catch (_) {
+          _profileImage = null;
+        }
       });
     } catch (e) {
       _showErrorSnackBar('Error al seleccionar imagen: $e');
@@ -130,9 +141,6 @@ class _Step3ScreenState extends State<Step3Screen> {
     );
   }
 
-  // ===============================
-  // SELECCIONAR CV
-  // ===============================
   Future<void> _pickDocument() async {
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -153,9 +161,6 @@ class _Step3ScreenState extends State<Step3Screen> {
     }
   }
 
-  // ===============================
-  // FINALIZAR REGISTRO
-  // ===============================
   Future<void> _finishRegistration() async {
     final pass = _passController.text.trim();
     final confirmPass = _confirmPassController.text.trim();
@@ -187,25 +192,26 @@ class _Step3ScreenState extends State<Step3Screen> {
     finalData['password'] = pass;
     finalData['phone'] = '+503$phone';
 
-    // ===============================
-    // FOTO DE PERFIL
-    // ===============================
+    String profileImageBase64 = '';
+
+    if (_profileImageBytes != null) {
+      profileImageBase64 = base64Encode(_profileImageBytes!);
+    }
+
+    finalData['profile_image_base64'] = profileImageBase64;
+
     finalData['profile_image_path'] = _profileImage?.path ?? '';
+    finalData['profile_image_name'] = _profileImageName ?? '';
 
     finalData['google_photo_url'] = _googlePhotoUrl ?? '';
 
     finalData['use_google_photo'] =
-        _profileImage == null &&
+        profileImageBase64.isEmpty &&
         _googlePhotoUrl != null &&
         _googlePhotoUrl!.isNotEmpty;
 
-    // ===============================
-    // CV
-    // ===============================
     finalData['cv_file_path'] = _cvPath ?? '';
     finalData['cv_file_name'] = _cvName ?? '';
-
-    // Compatibilidad con código viejo, por si alguna pantalla aún lee cv_path
     finalData['cv_path'] = _cvPath ?? '';
 
     final prefs = await SharedPreferences.getInstance();
@@ -234,6 +240,10 @@ class _Step3ScreenState extends State<Step3Screen> {
   }
 
   ImageProvider? _getProfilePreviewImage() {
+    if (_profileImageBytes != null) {
+      return MemoryImage(_profileImageBytes!);
+    }
+
     if (_profileImage != null) {
       return FileImage(_profileImage!);
     }
@@ -295,9 +305,6 @@ class _Step3ScreenState extends State<Step3Screen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ===============================
-                      // FOTO
-                      // ===============================
                       Center(
                         child: Column(
                           children: [
@@ -322,7 +329,7 @@ class _Step3ScreenState extends State<Step3Screen> {
 
                             _buildCompactButton(
                               text:
-                                  _profileImage == null
+                                  _profileImageBytes == null
                                       ? 'Sube una foto'
                                       : 'Cambiar foto',
                               icon: Icons.upload_rounded,
@@ -350,9 +357,6 @@ class _Step3ScreenState extends State<Step3Screen> {
 
                       const SizedBox(height: 15),
 
-                      // ===============================
-                      // CV
-                      // ===============================
                       Center(
                         child: Column(
                           children: [

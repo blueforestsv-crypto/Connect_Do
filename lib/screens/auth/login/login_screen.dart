@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
 import 'package:connect_do/screens/auth/register/benefits_screen.dart';
 import 'package:connect_do/services/auth_service.dart';
+import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -26,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _savedName;
   String? _savedEmail;
   String? _savedGooglePhotoUrl;
-  String? _savedLocalPhotoPath;
+  String? _savedProfileImageBase64;
 
   bool _showQuickLogin = false;
   bool _hasSavedUser = false;
@@ -50,35 +52,63 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkSavedUser() async {
     final prefs = await SharedPreferences.getInstance();
 
-    if (!mounted) return;
-
     final datosJson = prefs.getString('usuario_actual');
 
     if (datosJson != null && datosJson.isNotEmpty) {
-      final Map<String, dynamic> userData = jsonDecode(datosJson);
+      try {
+        final Map<String, dynamic> userData = jsonDecode(datosJson);
 
-      final firstName = userData['firstName'] ?? '';
-      final lastName = userData['lastName'] ?? '';
-      final fullName = '$firstName $lastName'.trim();
+        final firstName =
+            userData['firstName']?.toString() ??
+            userData['first_name']?.toString() ??
+            '';
 
-      final email = (userData['email'] ?? '').toString();
+        final lastName =
+            userData['lastName']?.toString() ??
+            userData['last_name']?.toString() ??
+            '';
 
-      String displayName = fullName;
+        final fullName = '$firstName $lastName'.trim();
 
-      if (displayName.isEmpty && email.isNotEmpty) {
-        displayName = email.split('@')[0].replaceAll('.', ' ');
+        final email = userData['email']?.toString() ?? '';
+
+        String displayName = fullName;
+
+        if (displayName.isEmpty && email.isNotEmpty) {
+          displayName = email.split('@')[0].replaceAll('.', ' ');
+        }
+
+        final googlePhoto =
+            userData['google_photo_url']?.toString() ??
+            userData['photoUrl']?.toString() ??
+            userData['photo_url']?.toString() ??
+            '';
+
+        final profileImageBase64 =
+            userData['profile_image_base64']?.toString() ?? '';
+
+        if (!mounted) return;
+
+        setState(() {
+          _savedEmail = email;
+          _savedName = displayName.isNotEmpty ? displayName : 'Usuario';
+          _savedGooglePhotoUrl = googlePhoto;
+          _savedProfileImageBase64 = profileImageBase64;
+          _hasSavedUser = email.isNotEmpty;
+          _showQuickLogin = email.isNotEmpty;
+        });
+      } catch (_) {
+        if (!mounted) return;
+
+        setState(() {
+          _savedEmail = null;
+          _savedName = null;
+          _savedGooglePhotoUrl = null;
+          _savedProfileImageBase64 = null;
+          _hasSavedUser = false;
+          _showQuickLogin = false;
+        });
       }
-
-      if (!mounted) return;
-
-      setState(() {
-        _savedEmail = email;
-        _savedName = displayName.isNotEmpty ? displayName : 'Usuario';
-        _savedGooglePhotoUrl = userData['google_photo_url'] ?? '';
-        _savedLocalPhotoPath = userData['profile_image_path'] ?? '';
-        _hasSavedUser = email.isNotEmpty;
-        _showQuickLogin = email.isNotEmpty;
-      });
     }
 
     if (!mounted) return;
@@ -89,17 +119,72 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // =====================================================
+  // SINCRONIZAR FOTO DESDE BACKEND
+  // =====================================================
+  Future<void> _syncSavedUserWithBackendProfile() async {
+    try {
+      final backendProfile = await ProfileService.getMyProfile();
+
+      if (backendProfile == null) return;
+
+      final backendPhoto =
+          backendProfile['profile_image_base64']?.toString() ?? '';
+
+      if (backendPhoto.isEmpty) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final datosJson = prefs.getString('usuario_actual');
+
+      Map<String, dynamic> userData = {};
+
+      if (datosJson != null && datosJson.isNotEmpty) {
+        try {
+          userData = jsonDecode(datosJson) as Map<String, dynamic>;
+        } catch (_) {
+          userData = {};
+        }
+      }
+
+      userData['profile_image_base64'] = backendPhoto;
+
+      await prefs.setString('usuario_actual', jsonEncode(userData));
+
+      if (!mounted) return;
+
+      setState(() {
+        _savedProfileImageBase64 = backendPhoto;
+      });
+    } catch (_) {
+      // Si falla, usamos lo local y no rompemos el login.
+    }
+  }
+
+  // =====================================================
   // OBTENER FOTO GUARDADA
   // =====================================================
   ImageProvider? _getSavedUserImage() {
-    if (_savedGooglePhotoUrl != null && _savedGooglePhotoUrl!.isNotEmpty) {
-      return NetworkImage(_savedGooglePhotoUrl!);
+    final base64Photo = _savedProfileImageBase64?.trim() ?? '';
+
+    if (base64Photo.isNotEmpty) {
+      try {
+        String cleanBase64 = base64Photo;
+
+        if (cleanBase64.contains(',')) {
+          cleanBase64 = cleanBase64.split(',').last;
+        }
+
+        final Uint8List bytes = base64Decode(cleanBase64);
+
+        return MemoryImage(bytes);
+      } catch (_) {
+        return null;
+      }
     }
 
-    // En Flutter Web evitamos FileImage/File porque depende de dart:io.
-    // La foto local se puede reactivar después para Android/Windows.
-    if (_savedLocalPhotoPath != null && _savedLocalPhotoPath!.isNotEmpty) {
-      return null;
+    final googlePhoto = _savedGooglePhotoUrl?.trim() ?? '';
+
+    if (googlePhoto.isNotEmpty) {
+      return NetworkImage(googlePhoto);
     }
 
     return null;
@@ -138,7 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     await prefs.setBool('sesion_activa', true);
 
-    await Future.delayed(const Duration(milliseconds: 600));
+    await _syncSavedUserWithBackendProfile();
+
+    await Future.delayed(const Duration(milliseconds: 300));
 
     if (!mounted) return;
 
@@ -173,6 +260,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await AuthService.login(email: typedEmail, password: typedPassword);
+
+      await _syncSavedUserWithBackendProfile();
 
       if (!mounted) return;
 
