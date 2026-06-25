@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/services/publication_service.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
@@ -29,10 +30,13 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   Uint8List? _selectedMediaBytes;
   Uint8List? _selectedImageBytes;
 
+  Uint8List? _profileImageBytes;
+
   @override
   void initState() {
     super.initState();
     _contentController.addListener(_checkContent);
+    _loadCurrentUserAvatar();
   }
 
   @override
@@ -52,6 +56,66 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     return _contentController.text.trim().isNotEmpty ||
         _selectedMediaName != null ||
         _selectedImageBytes != null;
+  }
+
+  Future<void> _loadCurrentUserAvatar() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString('usuario_actual');
+
+      if (userJson == null || userJson.isEmpty) return;
+
+      final userData = jsonDecode(userJson) as Map<String, dynamic>;
+
+      final imageBase64 =
+          userData['profile_image_base64']?.toString() ??
+          userData['profileImageBase64']?.toString() ??
+          '';
+
+      if (imageBase64.trim().isEmpty) return;
+
+      final imageBytes = _decodeBase64Image(imageBase64);
+
+      if (imageBytes == null) return;
+
+      if (!mounted) return;
+
+      setState(() {
+        _profileImageBytes = imageBytes;
+      });
+    } catch (_) {
+      // Si no carga la foto, dejamos el ícono por defecto.
+    }
+  }
+
+  Uint8List? _decodeBase64Image(String value) {
+    try {
+      var cleanValue = value.trim();
+
+      if (cleanValue.contains(',')) {
+        cleanValue = cleanValue.split(',').last;
+      }
+
+      return base64Decode(cleanValue);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildUserAvatar() {
+    if (_profileImageBytes != null) {
+      return CircleAvatar(
+        radius: 16,
+        backgroundColor: Colors.white24,
+        backgroundImage: MemoryImage(_profileImageBytes!),
+      );
+    }
+
+    return const CircleAvatar(
+      radius: 16,
+      backgroundColor: Colors.white24,
+      child: Icon(Icons.person, color: Colors.white, size: 18),
+    );
   }
 
   // =====================================================
@@ -91,8 +155,6 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       if (!mounted) return;
 
       setState(() {
-        // En Flutter Web no existe file.path.
-        // Por eso usamos file.name y file.bytes.
         _selectedMediaName = file.name;
         _selectedMediaType = type;
         _selectedMediaBytes = file.bytes;
@@ -655,11 +717,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
         title: Row(
           children: [
-            const CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white24,
-              child: Icon(Icons.person, color: Colors.white, size: 18),
-            ),
+            _buildUserAvatar(),
 
             const SizedBox(width: 10),
 
