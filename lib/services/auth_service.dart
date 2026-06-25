@@ -12,10 +12,12 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    final cleanEmail = email.trim();
+
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email.trim(), 'password': password}),
+      body: jsonEncode({'email': cleanEmail, 'password': password}),
     );
 
     if (response.statusCode != 200) {
@@ -36,6 +38,7 @@ class AuthService {
     await _saveSession(accessToken: accessToken, refreshToken: refreshToken);
 
     await _saveCurrentUser(accessToken);
+    await _syncCurrentProfileFromBackend();
   }
 
   static Future<void> register({required Map<String, dynamic> userData}) async {
@@ -87,9 +90,10 @@ class AuthService {
 
     await login(email: email, password: password);
 
-    await _mergeLocalUserData(userData);
+    await _mergeLocalUserData(userData, preserveOnlyIfSameUser: true);
 
     await _syncProfileWithBackend(userData);
+    await _syncCurrentProfileFromBackend();
   }
 
   static Future<void> _saveSession({
@@ -102,6 +106,8 @@ class AuthService {
 
     if (refreshToken.isNotEmpty) {
       await prefs.setString('refresh_token', refreshToken);
+    } else {
+      await prefs.remove('refresh_token');
     }
 
     await prefs.setBool('sesion_activa', true);
@@ -129,10 +135,13 @@ class AuthService {
       'last_name': userData['last_name']?.toString() ?? '',
     };
 
-    await _mergeLocalUserData(backendUserData);
+    await _mergeLocalUserData(backendUserData, preserveOnlyIfSameUser: true);
   }
 
-  static Future<void> _mergeLocalUserData(Map<String, dynamic> newData) async {
+  static Future<void> _mergeLocalUserData(
+    Map<String, dynamic> newData, {
+    bool preserveOnlyIfSameUser = false,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
 
     final existingUserJson = prefs.getString('usuario_actual');
@@ -147,9 +156,100 @@ class AuthService {
       }
     }
 
-    final mergedUserData = <String, dynamic>{...existingUserData, ...newData};
+    final existingId = existingUserData['id']?.toString() ?? '';
+    final existingEmail = existingUserData['email']?.toString() ?? '';
+
+    final newId = newData['id']?.toString() ?? '';
+    final newEmail = newData['email']?.toString() ?? '';
+
+    final sameUser =
+        (existingId.isNotEmpty && newId.isNotEmpty && existingId == newId) ||
+        (existingEmail.isNotEmpty &&
+            newEmail.isNotEmpty &&
+            existingEmail.toLowerCase() == newEmail.toLowerCase());
+
+    final Map<String, dynamic> mergedUserData;
+
+    if (preserveOnlyIfSameUser && !sameUser) {
+      // Usuario diferente: NO arrastrar foto/CV/datos locales del usuario anterior.
+      mergedUserData = <String, dynamic>{
+        ...newData,
+        'profile_image_base64':
+            newData['profile_image_base64']?.toString() ?? '',
+        'profile_image_path': newData['profile_image_path']?.toString() ?? '',
+        'google_photo_url': newData['google_photo_url']?.toString() ?? '',
+        'cv_file_base64': newData['cv_file_base64']?.toString() ?? '',
+        'cv_file_name': newData['cv_file_name']?.toString() ?? '',
+        'cv_file_path': newData['cv_file_path']?.toString() ?? '',
+        'cv_path': newData['cv_path']?.toString() ?? '',
+        'cv_file_size': newData['cv_file_size'] ?? 0,
+        'career': newData['career']?.toString() ?? '',
+        'cycle': newData['cycle']?.toString() ?? '',
+        'phone': newData['phone']?.toString() ?? '',
+        'description': newData['description']?.toString() ?? '',
+        'portfolio_link': newData['portfolio_link']?.toString() ?? '',
+        'skills': newData['skills'] ?? [],
+      };
+    } else {
+      // Mismo usuario: sí podemos conservar datos locales.
+      mergedUserData = <String, dynamic>{...existingUserData, ...newData};
+    }
 
     await prefs.setString('usuario_actual', jsonEncode(mergedUserData));
+  }
+
+  static Future<void> _syncCurrentProfileFromBackend() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('access_token') ?? '';
+
+      if (accessToken.isEmpty) return;
+
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/profiles/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (response.statusCode != 200) return;
+
+      final profileData = jsonDecode(response.body) as Map<String, dynamic>;
+
+      final currentUserJson = prefs.getString('usuario_actual');
+
+      Map<String, dynamic> currentUser = {};
+
+      if (currentUserJson != null && currentUserJson.isNotEmpty) {
+        try {
+          currentUser = jsonDecode(currentUserJson) as Map<String, dynamic>;
+        } catch (_) {
+          currentUser = {};
+        }
+      }
+
+      currentUser['phone'] = profileData['phone']?.toString() ?? '';
+      currentUser['university'] = profileData['university']?.toString() ?? '';
+      currentUser['level'] = profileData['academic_level']?.toString() ?? '';
+      currentUser['career'] = profileData['career']?.toString() ?? '';
+      currentUser['cycle'] = profileData['academic_cycle']?.toString() ?? '';
+      currentUser['description'] = profileData['bio']?.toString() ?? '';
+      currentUser['portfolio_link'] =
+          profileData['portfolio_url']?.toString() ?? '';
+
+      // Importante: si backend no tiene foto, limpiamos la local.
+      // Así no se queda la foto del usuario anterior.
+      currentUser['profile_image_base64'] =
+          profileData['profile_image_base64']?.toString() ?? '';
+
+      currentUser['google_photo_url'] =
+          profileData['avatar_url']?.toString() ?? '';
+
+      await prefs.setString('usuario_actual', jsonEncode(currentUser));
+    } catch (_) {
+      // No rompemos login por un fallo de perfil.
+    }
   }
 
   static Future<void> _syncProfileWithBackend(
@@ -200,5 +300,8 @@ class AuthService {
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
     await prefs.setBool('sesion_activa', false);
+
+    // Para evitar que aparezca usuario anterior en login rápido.
+    await prefs.remove('usuario_actual');
   }
 }
