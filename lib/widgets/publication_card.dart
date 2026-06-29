@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/application_service.dart';
 import 'package:connect_do/widgets/feed/publication_actions.dart';
 import 'package:connect_do/widgets/feed/publication_content.dart';
 import 'package:connect_do/widgets/feed/publication_header.dart';
@@ -42,11 +43,185 @@ class PublicationCard extends StatelessWidget {
               _PublicationMediaPreview(post: post),
             ],
 
+            if (post.isOpportunity) ...[
+              const SizedBox(height: 18),
+              _ApplyOpportunityButton(post: post),
+            ],
+
             const SizedBox(height: 18),
 
             PublicationActions(post: post, onSavedChanged: onSavedChanged),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ApplyOpportunityButton extends StatefulWidget {
+  final PublicationModel post;
+
+  const _ApplyOpportunityButton({required this.post});
+
+  @override
+  State<_ApplyOpportunityButton> createState() =>
+      _ApplyOpportunityButtonState();
+}
+
+class _ApplyOpportunityButtonState extends State<_ApplyOpportunityButton> {
+  final ApplicationService _applicationService = ApplicationService();
+
+  bool isApplying = false;
+  bool hasApplied = false;
+
+  Future<void> _apply() async {
+    if (isApplying || hasApplied) return;
+
+    try {
+      setState(() {
+        isApplying = true;
+      });
+
+      await _applicationService.applyToPublication(
+        publicationId: widget.post.id,
+        coverMessage:
+            'Hola, me interesa aplicar a ${widget.post.displayTitle}.',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        hasApplied = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Postulación enviada correctamente.'),
+          backgroundColor: Color(0xFF10B970),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      if (message.contains('Ya aplicaste')) {
+        setState(() {
+          hasApplied = true;
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        isApplying = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color:
+              isDarkMode
+                  ? const Color(0xFF2563EB).withOpacity(0.35)
+                  : const Color(0xFF2563EB).withOpacity(0.18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.work_outline_rounded, color: Color(0xFF2563EB)),
+
+              const SizedBox(width: 8),
+
+              Expanded(
+                child: Text(
+                  widget.post.typeLabel,
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+              if (widget.post.hasModality)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B970).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    widget.post.modalityLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF10B970),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: hasApplied || isApplying ? null : _apply,
+              icon:
+                  isApplying
+                      ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : Icon(
+                        hasApplied
+                            ? Icons.check_circle_outline
+                            : Icons.send_rounded,
+                      ),
+              label: Text(
+                isApplying
+                    ? 'Enviando...'
+                    : hasApplied
+                    ? 'Postulación enviada'
+                    : 'Aplicar a esta oportunidad',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFF10B970),
+                disabledForegroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

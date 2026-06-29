@@ -165,6 +165,13 @@ class PublicationModel {
     return mediaItems.isNotEmpty;
   }
 
+  bool get isOpportunity {
+    return type == 'job' ||
+        type == 'internship' ||
+        type == 'social_service' ||
+        type == 'freelance';
+  }
+
   PublicationMediaItem? get firstMedia {
     if (mediaItems.isEmpty) {
       return null;
