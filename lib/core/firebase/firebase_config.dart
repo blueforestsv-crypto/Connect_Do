@@ -9,16 +9,16 @@ class FirebaseConfig {
   const FirebaseConfig._();
 
   /// "Clave de API web" / current_key.
-  static const String apiKey = '';
+  static const String apiKey = 'AIzaSyCIB-ma3c0PNKns1r1Q1dPLXpZ3u04vi4c';
 
   /// "ID de la app", empieza con 1:...:android:...
-  static const String appId = '';
+  static const String appId = '1:4976582749:android:884813a52e1a9bab1cedb4';
 
   /// "Número del proyecto" (Project number).
-  static const String messagingSenderId = '';
+  static const String messagingSenderId = '4976582749';
 
   /// "ID del proyecto" (Project ID).
-  static const String projectId = '';
+  static const String projectId = 'connect-do-208e3';
 
   static bool get isConfigured =>
       apiKey.isNotEmpty &&
