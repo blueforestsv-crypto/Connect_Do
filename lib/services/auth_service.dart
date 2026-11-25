@@ -181,7 +181,21 @@ class AuthService {
 
       switch (e.code) {
         case GoogleSignInExceptionCode.canceled:
-          return null;
+          // En Android, Google también responde "canceled" cuando rechaza la
+          // configuración (p. ej. "[16] Account reauth failed" o "[28444]
+          // Developer console is not set up correctly"). Solo es una
+          // cancelación real si la persona cerró el selector.
+          final detail = (e.description ?? '').trim();
+          if (detail.isEmpty ||
+              RegExp(r'cancel', caseSensitive: false).hasMatch(detail) &&
+                  !RegExp(r'\[\d+\]').hasMatch(detail)) {
+            return null;
+          }
+          throw AuthException(
+            'Google rechazó el inicio de sesión: $detail. '
+            'Revisa el cliente Android (paquete y SHA-1) y la pantalla de '
+            'consentimiento en Google Cloud.',
+          );
         case GoogleSignInExceptionCode.clientConfigurationError:
         case GoogleSignInExceptionCode.providerConfigurationError:
           // Casi siempre: falta el cliente Android en Google Cloud o el
