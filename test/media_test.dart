@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,7 +34,7 @@ void main() {
 
   group('photoProvider', () {
     test('enlace, base64 o vacío', () {
-      expect(photoProvider(_image), isA<NetworkImage>());
+      expect(photoProvider(_image), isA<CachedNetworkImageProvider>());
       expect(photoProvider('aGVsbG8='), isA<MemoryImage>());
       expect(photoProvider(''), isNull);
       expect(photoProvider('null'), isNull);

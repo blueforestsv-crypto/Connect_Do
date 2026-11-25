@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -347,13 +348,17 @@ class _GroupPlayerState extends State<_GroupPlayer>
                         aspectRatio: _video!.value.aspectRatio,
                         child: VideoPlayer(_video!),
                       )
-                      : Image.network(
-                        CloudinaryUrl.videoPoster(story.url, width: 1080),
+                      : Image(
+                        image: CachedNetworkImageProvider(
+                          CloudinaryUrl.videoPoster(story.url, width: 1080),
+                        ),
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                       ))
-                  : Image.network(
-                    CloudinaryUrl.image(story.url, width: 1440),
+                  : Image(
+                    image: CachedNetworkImageProvider(
+                      CloudinaryUrl.image(story.url, width: 1440),
+                    ),
                     key: ValueKey(story.id),
                     fit: BoxFit.contain,
                     frameBuilder: (_, child, frame, __) {

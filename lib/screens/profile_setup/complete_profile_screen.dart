@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -280,7 +281,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     final current = photoProvider(_currentPhotoBase64, size: 300);
     if (current != null) return current;
 
-    if (_googlePhotoUrl.isNotEmpty) return NetworkImage(_googlePhotoUrl);
+    if (_googlePhotoUrl.isNotEmpty) {
+      return CachedNetworkImageProvider(_googlePhotoUrl);
+    }
 
     return null;
   }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -122,10 +123,12 @@ class MediaThumbnail extends StatelessWidget {
 
     final Widget image;
     if (item.hasUrl) {
-      image = Image.network(
-        item.isVideo
-            ? CloudinaryUrl.videoPoster(item.url, width: width)
-            : CloudinaryUrl.image(item.url, width: width),
+      image = Image(
+        image: CachedNetworkImageProvider(
+          item.isVideo
+              ? CloudinaryUrl.videoPoster(item.url, width: width)
+              : CloudinaryUrl.image(item.url, width: width),
+        ),
         fit: fit,
         width: double.infinity,
         height: double.infinity,

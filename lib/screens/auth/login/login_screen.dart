@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -176,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final googlePhoto = _savedGooglePhotoUrl?.trim() ?? '';
 
     if (googlePhoto.isNotEmpty) {
-      return NetworkImage(googlePhoto);
+      return CachedNetworkImageProvider(googlePhoto);
     }
 
     return null;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,8 +41,14 @@ class IndividualChatScreen extends StatefulWidget {
   State<IndividualChatScreen> createState() => _IndividualChatScreenState();
 }
 
-class _IndividualChatScreenState extends State<IndividualChatScreen> {
-  static const Duration _pollInterval = Duration(seconds: 4);
+class _IndividualChatScreenState extends State<IndividualChatScreen>
+    with WidgetsBindingObserver {
+  // Cada 5 s se piden solo los mensajes nuevos (casi 0 datos si no hay).
+  // Cada 6 vueltas (30 s) se refresca la lista completa, sin fotos de
+  // perfil, para actualizar los "visto" (✓✓).
+  static const Duration _pollInterval = Duration(seconds: 5);
+  static const int _fullRefreshEvery = 6;
+  int _pollCount = 0;
 
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
@@ -73,11 +80,30 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   void initState() {
     super.initState();
     _input.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addObserver(this);
     _start();
+  }
+
+  /// En segundo plano no se consulta nada; al volver, se actualiza.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _fetch(full: true);
+      _startPolling();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _pollTimer?.cancel();
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _fetch());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _recordTimer?.cancel();
     _recorder.dispose();
@@ -89,29 +115,59 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   Future<void> _start() async {
     _myId = (await UserService.getUser())['id']?.toString() ?? '';
     await _fetch(initial: true);
-    _pollTimer = Timer.periodic(_pollInterval, (_) => _fetch());
+    _startPolling();
   }
 
-  Future<void> _fetch({bool initial = false}) async {
+  Future<void> _fetch({bool initial = false, bool full = false}) async {
     if (_isFetching) return;
     _isFetching = true;
+    _pollCount++;
+
+    // El más nuevo que ya mandó el servidor (no los pendientes locales).
+    final newest = _messages.isEmpty ? null : _messages.first.createdAt;
+    final complete =
+        initial ||
+        full ||
+        newest == null ||
+        _pollCount % _fullRefreshEvery == 0;
 
     try {
-      final data = await ChatService.getMessages(contactId: widget.chatId);
-      final messages =
+      final data = await ChatService.getMessages(
+        contactId: widget.chatId,
+        after: complete ? null : newest,
+      );
+      final incoming =
           data
               .map((m) => ChatMessageModel.fromBackend(m, currentUserId: _myId))
               .toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       // Solo marca como leído si hay mensajes nuevos del otro sin leer.
-      if (messages.any((m) => !m.isMe && !m.isRead)) {
+      if (incoming.any((m) => !m.isMe && !m.isRead)) {
         ChatService.markAsRead(contactId: widget.chatId).ignore();
       }
 
       if (!mounted) return;
+      if (!complete && incoming.isEmpty) {
+        if (initial) setState(() => _isLoading = false);
+        return;
+      }
+
       setState(() {
-        _messages = messages;
+        if (complete) {
+          // Conserva la vista local de fotos recién enviadas.
+          final local = {
+            for (final m in _messages)
+              if (m.localBytes != null) m.id: m.localBytes,
+          };
+          _messages = [for (final m in incoming) m..localBytes = local[m.id]];
+        } else {
+          final known = _messages.map((m) => m.id).toSet();
+          _messages = [
+            ...incoming.where((m) => !known.contains(m.id)),
+            ..._messages,
+          ];
+        }
         _isLoading = false;
         _hasError = false;
       });
@@ -947,10 +1003,12 @@ class _Bubble extends StatelessWidget {
         gaplessPlayback: true,
       );
     } else if (m.attachmentUrl != null) {
-      image = Image.network(
-        m.attachmentType == 'video'
-            ? CloudinaryUrl.videoPoster(m.attachmentUrl!, width: 600)
-            : CloudinaryUrl.image(m.attachmentUrl!, width: 600),
+      image = Image(
+        image: CachedNetworkImageProvider(
+          m.attachmentType == 'video'
+              ? CloudinaryUrl.videoPoster(m.attachmentUrl!, width: 600)
+              : CloudinaryUrl.image(m.attachmentUrl!, width: 600),
+        ),
         fit: BoxFit.cover,
         loadingBuilder:
             (_, child, progress) =>

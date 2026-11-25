@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:connect_do/utils/cloudinary_url.dart';
@@ -50,7 +51,7 @@ class UserAvatar extends StatelessWidget {
 
     ImageProvider? image;
     if (value.startsWith('http://') || value.startsWith('https://')) {
-      image = NetworkImage(
+      image = CachedNetworkImageProvider(
         CloudinaryUrl.isCloudinary(value)
             ? CloudinaryUrl.square(value, size: (radius * 4).round())
             : value,

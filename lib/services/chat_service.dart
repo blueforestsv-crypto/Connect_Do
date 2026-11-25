@@ -62,6 +62,20 @@ class ChatService {
   // TOTAL DE MENSAJES NO LEÍDOS
   // ===============================
   static Future<int> getTotalUnreadMessages() async {
+    // Ruta ligera: solo el número (antes se descargaban todas las
+    // conversaciones con sus fotos para sumarlo).
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/chats/unread-count'),
+      headers: await _headers(),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['total'] is num) {
+        return (data['total'] as num).toInt();
+      }
+    }
+
+    // Servidor anterior: se calcula como antes.
     final conversations = await getConversations();
 
     int total = 0;
@@ -86,12 +100,21 @@ class ChatService {
     required String contactId,
     int limit = 50,
     int offset = 0,
+
+    /// Solo los mensajes posteriores a esta fecha (actualizaciones ligeras).
+    DateTime? after,
   }) async {
     final headers = await _headers();
 
     final response = await http.get(
-      Uri.parse(
-        '${ApiConfig.baseUrl}/chats/$contactId/messages?limit=$limit&offset=$offset',
+      Uri.parse('${ApiConfig.baseUrl}/chats/$contactId/messages').replace(
+        queryParameters: {
+          'limit': '$limit',
+          'offset': '$offset',
+          // La foto de perfil ya la tiene la pantalla: no se vuelve a bajar.
+          'include_images': 'false',
+          if (after != null) 'after': after.toUtc().toIso8601String(),
+        },
       ),
       headers: headers,
     );

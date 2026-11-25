@@ -29,6 +29,10 @@ class PushService {
 
   static const String _tokenKey = 'push_device_token';
 
+  /// Cambia cada vez que llega un push con la app abierta, para que las
+  /// pantallas se actualicen al instante sin consultar a cada rato.
+  static final ValueNotifier<int> received = ValueNotifier<int>(0);
+
   static bool _ready = false;
   static StreamSubscription<String>? _refreshSub;
 
@@ -131,6 +135,7 @@ class PushService {
   // AL RECIBIR / TOCAR
   // =====================================================
   static void _showInApp(RemoteMessage message) {
+    received.value++;
     final context = navigatorKey.currentContext;
     final notification = message.notification;
     if (context == null || notification == null) return;

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -243,8 +244,10 @@ class _VideoPageState extends State<_VideoPage> {
       return Stack(
         fit: StackFit.expand,
         children: [
-          Image.network(
-            CloudinaryUrl.videoPoster(widget.url, width: 1200),
+          Image(
+            image: CachedNetworkImageProvider(
+              CloudinaryUrl.videoPoster(widget.url, width: 1200),
+            ),
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => const SizedBox.shrink(),
           ),

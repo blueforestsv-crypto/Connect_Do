@@ -20,7 +20,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  // El contador de mensajes se actualiza al llegar un push y, por si acaso,
+  // cada 30 s solo con la app en pantalla.
+  static const Duration _unreadInterval = Duration(seconds: 30);
   int _selectedIndex = 0;
 
   int _unreadChatCount = 0;
@@ -56,13 +59,34 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadProfileCompletion();
     PushService.registerDevice();
 
-    _chatUnreadTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+    WidgetsBinding.instance.addObserver(this);
+    PushService.received.addListener(_loadUnreadChatCount);
+    _startUnreadTimer();
+  }
+
+  void _startUnreadTimer() {
+    _chatUnreadTimer?.cancel();
+    _chatUnreadTimer = Timer.periodic(
+      _unreadInterval,
+      (_) => _loadUnreadChatCount(),
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
       _loadUnreadChatCount();
-    });
+      _startUnreadTimer();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _chatUnreadTimer?.cancel();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PushService.received.removeListener(_loadUnreadChatCount);
     _chatUnreadTimer?.cancel();
     _feedScrollController.dispose();
     super.dispose();

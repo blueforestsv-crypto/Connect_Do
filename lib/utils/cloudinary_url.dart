@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/painting.dart';
 
 /// Ayudas para pedirle a Cloudinary cada archivo en el tamaño justo.
@@ -43,7 +44,7 @@ ImageProvider? photoProvider(String? value, {int size = 200}) {
   if (text.isEmpty || text == 'null') return null;
 
   if (text.startsWith('http://') || text.startsWith('https://')) {
-    return NetworkImage(
+    return CachedNetworkImageProvider(
       CloudinaryUrl.isCloudinary(text)
           ? CloudinaryUrl.square(text, size: size)
           : text,
