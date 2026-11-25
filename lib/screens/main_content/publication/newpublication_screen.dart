@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/media_upload_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -62,6 +62,8 @@ const _modalities = [
 
 class _NewPublicationScreenState extends State<NewPublicationScreen> {
   static const int _maxImages = 4;
+  static const int _maxVideoSeconds = 60;
+  static const int _maxVideoBytes = 60 * 1024 * 1024;
   static const int _minDescription = 10;
 
   final PublicationApiService _api = PublicationApiService();
@@ -74,9 +76,14 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   String _type = 'general';
   String _visibility = 'contacts';
   String? _modality;
-  final List<({Uint8List bytes, String name})> _images = [];
+  final List<_PickedMedia> _images = [];
 
   bool _isPublishing = false;
+
+  /// Texto del botón mientras se suben los archivos.
+  String? _uploadLabel;
+
+  bool get _hasVideo => _images.any((m) => m.isVideo);
   bool _submitted = false;
 
   String _myName = '';
@@ -160,9 +167,11 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       );
       if (picked.isEmpty) return;
 
-      final selected = <({Uint8List bytes, String name})>[];
+      final selected = <_PickedMedia>[];
       for (final file in picked.take(remaining)) {
-        selected.add((bytes: await file.readAsBytes(), name: file.name));
+        selected.add(
+          _PickedMedia(bytes: await file.readAsBytes(), name: file.name),
+        );
       }
 
       if (!mounted) return;
@@ -180,12 +189,141 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
     }
   }
 
-  static String _mimeFor(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    return 'image/jpeg';
+  Future<void> _pickVideo() async {
+    if (_hasVideo || _images.length >= _maxImages || _isPublishing) return;
+
+    try {
+      final picked = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: _maxVideoSeconds),
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > _maxVideoBytes) {
+        if (mounted) {
+          showAuthMessage(
+            context,
+            'El video no puede pesar más de '
+            '${_maxVideoBytes ~/ (1024 * 1024)} MB.',
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+      setState(
+        () => _images.add(
+          _PickedMedia(bytes: bytes, name: picked.name, isVideo: true),
+        ),
+      );
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo cargar el video.');
+    }
+  }
+
+  void _chooseMedia() {
+    if (_isPublishing || _images.length >= _maxImages) return;
+
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        Widget option(
+          IconData icon,
+          String title,
+          String subtitle,
+          VoidCallback? onTap,
+        ) {
+          return ListTile(
+            enabled: onTap != null,
+            onTap: () {
+              Navigator.pop(sheetContext);
+              onTap?.call();
+            },
+            leading: Icon(
+              icon,
+              color: onTap == null ? palette.muted : Brand.blue,
+            ),
+            title: Text(
+              title,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontWeight: FontWeight.w600,
+                color: onTap == null ? palette.muted : palette.title,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                color: palette.muted,
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+          decoration: BoxDecoration(
+            color: palette.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(Brand.radiusLg),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              option(
+                PhosphorIconsRegular.images,
+                'Fotos',
+                'Hasta $_maxImages en total',
+                _pickImages,
+              ),
+              option(
+                PhosphorIconsRegular.videoCamera,
+                'Video',
+                _hasVideo
+                    ? 'Solo un video por publicación'
+                    : 'Hasta $_maxVideoSeconds segundos',
+                _hasVideo ? null : _pickVideo,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Sube cada archivo a Cloudinary y devuelve los datos para la publicación.
+  Future<List<Map<String, dynamic>>> _uploadAll() async {
+    final result = <Map<String, dynamic>>[];
+    for (var i = 0; i < _images.length; i++) {
+      final media = _images[i];
+      void label(double progress) {
+        if (!mounted) return;
+        setState(() {
+          _uploadLabel =
+              _images.length == 1
+                  ? 'Subiendo ${(progress * 100).round()}%'
+                  : 'Subiendo ${i + 1} de ${_images.length} · '
+                      '${(progress * 100).round()}%';
+        });
+      }
+
+      label(0);
+      final uploaded = await MediaUploadService.upload(
+        bytes: media.bytes,
+        fileName: media.name,
+        kind: media.isVideo ? MediaKind.video : MediaKind.image,
+        purpose: MediaPurpose.post,
+        onProgress: label,
+      );
+      result.add({...uploaded.toJson(), 'file_name': media.name});
+    }
+    return result;
   }
 
   // ===============================
@@ -208,6 +346,9 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                 : '${description.substring(0, 57)}…');
 
     try {
+      final mediaItems = await _uploadAll();
+      if (mounted) setState(() => _uploadLabel = 'Publicando…');
+
       await _api.createPublication(
         type: _type,
         title: title,
@@ -215,16 +356,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
         visibility: _visibility,
         location: _needsTitle ? _locationController.text : null,
         modality: _isOpportunity ? _modality : null,
-        mediaItems: [
-          for (final image in _images)
-            {
-              'type': 'image',
-              'base64': base64Encode(image.bytes),
-              'file_name': image.name,
-              'mime_type': _mimeFor(image.name),
-              'size_bytes': image.bytes.length,
-            },
-        ],
+        mediaItems: mediaItems,
       );
 
       if (!mounted) return;
@@ -233,7 +365,10 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       widget.onBackToFeed();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _isPublishing = false);
+      setState(() {
+        _isPublishing = false;
+        _uploadLabel = null;
+      });
       showAuthMessage(context, error.toString());
     }
   }
@@ -247,6 +382,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       _modality = null;
       _images.clear();
       _isPublishing = false;
+      _uploadLabel = null;
       _submitted = false;
     });
   }
@@ -505,7 +641,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                   ],
                   const SizedBox(height: 20),
                   AuthFieldLabel(
-                    'Fotos',
+                    'Fotos o video',
                     trailing: Text(
                       '${_images.length}/$_maxImages',
                       style: TextStyle(
@@ -518,8 +654,8 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                   _buildImages(palette),
                   const SizedBox(height: 28),
                   GradientButton(
-                    text: 'Publicar',
-                    isLoading: _isPublishing,
+                    text: _uploadLabel ?? 'Publicar',
+                    isLoading: _isPublishing && _uploadLabel == null,
                     trailingIcon: PhosphorIconsRegular.paperPlaneRight,
                     onPressed: _publish,
                   ),
@@ -611,7 +747,18 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(Brand.radiusSm),
-                child: Image.memory(_images[i].bytes, fit: BoxFit.cover),
+                child:
+                    _images[i].isVideo
+                        ? Container(
+                          color: Colors.black87,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            PhosphorIconsFill.playCircle,
+                            color: Colors.white,
+                            size: 30,
+                          ),
+                        )
+                        : Image.memory(_images[i].bytes, fit: BoxFit.cover),
               ),
               Positioned(
                 top: 4,
@@ -640,7 +787,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
           ),
         if (_images.length < _maxImages)
           InkWell(
-            onTap: _pickImages,
+            onTap: _chooseMedia,
             borderRadius: BorderRadius.circular(Brand.radiusSm),
             child: Container(
               decoration: BoxDecoration(
@@ -712,4 +859,16 @@ class _ChoiceChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PickedMedia {
+  final Uint8List bytes;
+  final String name;
+  final bool isVideo;
+
+  const _PickedMedia({
+    required this.bytes,
+    required this.name,
+    this.isVideo = false,
+  });
 }

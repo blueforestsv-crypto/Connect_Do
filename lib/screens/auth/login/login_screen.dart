@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/screens/account/forgot_password_screen.dart';
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
 import 'package:connect_do/screens/auth/register/register_screen.dart';
@@ -169,15 +170,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // OBTENER FOTO GUARDADA
   // =====================================================
   ImageProvider? _getSavedUserImage() {
-    final base64Photo = _savedProfileImageBase64?.trim() ?? '';
-
-    if (base64Photo.isNotEmpty) {
-      try {
-        return MemoryImage(base64Decode(base64Photo.split(',').last));
-      } catch (_) {
-        return null;
-      }
-    }
+    final saved = photoProvider(_savedProfileImageBase64);
+    if (saved != null) return saved;
 
     final googlePhoto = _savedGooglePhotoUrl?.trim() ?? '';
 

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/theme/brand.dart';
 
 /// Avatar con foto (URL o base64) o, si no hay, iniciales sobre un color
@@ -49,7 +50,11 @@ class UserAvatar extends StatelessWidget {
 
     ImageProvider? image;
     if (value.startsWith('http://') || value.startsWith('https://')) {
-      image = NetworkImage(value);
+      image = NetworkImage(
+        CloudinaryUrl.isCloudinary(value)
+            ? CloudinaryUrl.square(value, size: (radius * 4).round())
+            : value,
+      );
     } else if (value.isNotEmpty && value != 'null') {
       final bytes = _decode(value);
       if (bytes != null) image = MemoryImage(bytes);

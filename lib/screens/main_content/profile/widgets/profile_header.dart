@@ -96,11 +96,11 @@ class _ProfileHeaderState extends State<ProfileHeader> {
       );
       if (picked == null) return;
 
-      final imageBase64 = base64Encode(await picked.readAsBytes());
+      final bytes = await picked.readAsBytes();
 
       // Se muestra y se guarda en el teléfono de inmediato.
       final updated = Map<String, dynamic>.from(_user)
-        ..['profile_image_base64'] = imageBase64;
+        ..['profile_image_base64'] = base64Encode(bytes);
       await UserService.saveUser(updated);
       if (!mounted) return;
       setState(() {
@@ -108,8 +108,16 @@ class _ProfileHeaderState extends State<ProfileHeader> {
         _isUploadingPhoto = true;
       });
 
-      await ProfileService.updateMyProfile(profileImageBase64: imageBase64);
+      // En el servidor queda el enlace de Cloudinary (más liviano).
+      final stored = await ProfileService.uploadProfilePhoto(
+        bytes,
+        picked.name,
+      );
+      final synced = Map<String, dynamic>.from(_user)
+        ..['profile_image_base64'] = stored;
+      await UserService.saveUser(synced);
       if (!mounted) return;
+      setState(() => _user = synced);
       showAuthMessage(
         context,
         'Foto de perfil actualizada',

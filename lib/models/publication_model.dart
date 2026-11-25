@@ -1,13 +1,25 @@
 class PublicationMediaItem {
   final String type;
+
+  /// Enlace de Cloudinary (publicaciones nuevas).
+  final String url;
+
+  /// Imagen en base64 (publicaciones antiguas).
   final String base64;
+  final int? width;
+  final int? height;
+  final double? duration;
   final String? fileName;
   final String? mimeType;
   final int? sizeBytes;
 
   PublicationMediaItem({
     required this.type,
-    required this.base64,
+    this.url = '',
+    this.base64 = '',
+    this.width,
+    this.height,
+    this.duration,
     this.fileName,
     this.mimeType,
     this.sizeBytes,
@@ -17,10 +29,22 @@ class PublicationMediaItem {
 
   bool get isVideo => type.toLowerCase() == 'video';
 
+  bool get hasUrl => url.isNotEmpty;
+
+  /// Alto / ancho, para reservar el espacio antes de que cargue.
+  double? get aspectRatio =>
+      (width != null && height != null && width! > 0 && height! > 0)
+          ? width! / height!
+          : null;
+
   Map<String, dynamic> toJson() {
     return {
       'type': type,
-      'base64': base64,
+      if (url.isNotEmpty) 'url': url,
+      if (base64.isNotEmpty) 'base64': base64,
+      if (width != null) 'width': width,
+      if (height != null) 'height': height,
+      if (duration != null) 'duration': duration,
       'file_name': fileName,
       'mime_type': mimeType,
       'size_bytes': sizeBytes,
@@ -30,7 +54,11 @@ class PublicationMediaItem {
   factory PublicationMediaItem.fromJson(Map<String, dynamic> json) {
     return PublicationMediaItem(
       type: json['type']?.toString() ?? '',
+      url: json['url']?.toString() ?? '',
       base64: json['base64']?.toString() ?? '',
+      width: _parseNullableInt(json['width']),
+      height: _parseNullableInt(json['height']),
+      duration: double.tryParse(json['duration']?.toString() ?? ''),
       fileName: json['file_name']?.toString() ?? json['fileName']?.toString(),
       mimeType: json['mime_type']?.toString() ?? json['mimeType']?.toString(),
       sizeBytes: _parseNullableInt(json['size_bytes'] ?? json['sizeBytes']),
@@ -349,7 +377,9 @@ class PublicationModel {
           return PublicationMediaItem.fromJson(Map<String, dynamic>.from(item));
         })
         .where((item) {
-          return item.type.trim().isNotEmpty && item.base64.trim().isNotEmpty;
+          // Vale si trae enlace (Cloudinary) o la imagen antigua en base64.
+          return item.type.trim().isNotEmpty &&
+              (item.hasUrl || item.base64.trim().isNotEmpty);
         })
         .toList();
   }

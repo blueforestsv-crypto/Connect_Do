@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/helpers/profile_completion.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/services/user_service.dart';
@@ -276,11 +277,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   ImageProvider? _photoPreview() {
     if (_newPhotoBytes != null) return MemoryImage(_newPhotoBytes!);
 
-    if (_currentPhotoBase64.isNotEmpty) {
-      try {
-        return MemoryImage(base64Decode(_currentPhotoBase64.split(',').last));
-      } catch (_) {}
-    }
+    final current = photoProvider(_currentPhotoBase64, size: 300);
+    if (current != null) return current;
 
     if (_googlePhotoUrl.isNotEmpty) return NetworkImage(_googlePhotoUrl);
 
@@ -347,9 +345,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         bio: description,
         portfolioUrl: portfolio,
         phone: phone,
-        profileImageBase64: photoBase64,
         skills: List<String>.from(_skills),
       );
+      if (_newPhotoBytes != null) {
+        final stored = await ProfileService.uploadProfilePhoto(
+          _newPhotoBytes!,
+          'perfil.jpg',
+        );
+        updated['profile_image_base64'] = stored;
+        await UserService.saveUser(updated);
+      }
       if (_pendingCv != null) {
         await ProfileService.uploadCv(_pendingCv!);
         _pendingCv = null;

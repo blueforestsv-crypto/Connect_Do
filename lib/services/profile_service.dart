@@ -1,11 +1,14 @@
 import 'dart:convert';
 
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:connect_do/core/api/api_config.dart';
+import 'package:connect_do/services/media_upload_service.dart';
 
 class ProfileService {
   const ProfileService._();
@@ -193,5 +196,32 @@ class ProfileService {
       throw Exception(_detail(response, 'No se pudo cargar el perfil.'));
     }
     return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  }
+
+  // =====================================================
+  // FOTO DE PERFIL
+  // =====================================================
+  /// Sube la foto a Cloudinary y la guarda en el perfil. Si Cloudinary aún
+  /// no está configurado en el servidor, la guarda como antes (base64).
+  /// Devuelve el valor guardado (enlace o base64) para usarlo en el teléfono.
+  static Future<String> uploadProfilePhoto(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    try {
+      final uploaded = await MediaUploadService.upload(
+        bytes: bytes,
+        fileName: fileName,
+        kind: MediaKind.image,
+        purpose: MediaPurpose.avatar,
+      );
+      await updateMyProfile(avatarUrl: uploaded.url);
+      return uploaded.url;
+    } on MediaUploadException catch (error) {
+      if (!error.message.contains('aún no está disponible')) rethrow;
+      final value = base64Encode(bytes);
+      await updateMyProfile(profileImageBase64: value);
+      return value;
+    }
   }
 }
