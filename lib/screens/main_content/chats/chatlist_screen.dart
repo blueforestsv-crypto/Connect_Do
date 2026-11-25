@@ -695,7 +695,22 @@ class ChatListModel {
     final contact = json['contact'] as Map<String, dynamic>? ?? {};
     final lastMessage = json['last_message'] as Map<String, dynamic>?;
     final contactId = contact['id']?.toString() ?? '';
-    final content = lastMessage?['content']?.toString() ?? '';
+    final text = lastMessage?['content']?.toString().trim() ?? '';
+    final attachment = lastMessage?['attachment'];
+    final attachmentLabel = switch (attachment is Map
+        ? attachment['type']
+        : null) {
+      'image' => '📷 Foto',
+      'video' => '🎥 Video',
+      'audio' => '🎤 Nota de voz',
+      _ => '',
+    };
+    final content =
+        attachmentLabel.isEmpty
+            ? text
+            : text.isEmpty
+            ? attachmentLabel
+            : '$attachmentLabel · $text';
 
     return ChatListModel(
       chatId: contactId,

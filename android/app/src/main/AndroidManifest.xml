@@ -6,6 +6,7 @@
 
     <!-- Cámara -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Android 13 o superior -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />

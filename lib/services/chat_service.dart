@@ -117,13 +117,19 @@ class ChatService {
   static Future<Map<String, dynamic>> sendMessage({
     required String contactId,
     required String content,
+
+    /// Foto, video o nota de voz ya subida a Cloudinary.
+    Map<String, dynamic>? attachment,
   }) async {
     final headers = await _headers();
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/chats/$contactId/messages'),
       headers: headers,
-      body: jsonEncode({'content': content}),
+      body: jsonEncode({
+        'content': content,
+        if (attachment != null) 'attachment': attachment,
+      }),
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
