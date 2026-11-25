@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/stories/stories_row.dart';
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/services/contact_service.dart';
@@ -28,6 +29,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _hasError = false;
   String _query = '';
   String _myId = '';
+
+  final GlobalKey<StoriesRowState> _storiesKey = GlobalKey<StoriesRowState>();
 
   List<ChatListModel> get _visibleChats {
     if (_query.isEmpty) return _chats;
@@ -162,6 +165,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ],
               ),
             ),
+            // Historias de 24 h (la mía primero, luego mis contactos).
+            StoriesRow(key: _storiesKey),
+            const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: _SearchField(controller: _searchController),
@@ -177,7 +183,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       )
                       : RefreshIndicator(
                         color: Brand.blue,
-                        onRefresh: _load,
+                        onRefresh:
+                            () => Future.wait([
+                              _load(),
+                              _storiesKey.currentState?.reload() ??
+                                  Future.value(),
+                            ]),
                         child:
                             chats.isEmpty
                                 ? _buildEmpty(palette)
