@@ -2,6 +2,7 @@
 
     <!-- Internet: necesario para conectar la APK con Render/API online -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Cámara -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -47,6 +48,9 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="connect_do_general" />
     </application>
 
     <queries>

@@ -16,12 +16,14 @@ import 'screens/main_content/notification/notifications_screen.dart';
 import 'screens/main_content/profile/profile_screen.dart';
 
 import 'services/auth_service.dart';
+import 'services/push_service.dart';
 import 'services/theme_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await ThemeService.loadTheme();
+  await PushService.init();
 
   final Widget initialScreen = await _getInitialScreen();
 
@@ -80,6 +82,7 @@ class MyApp extends StatelessWidget {
       builder: (_, ThemeMode currentMode, __) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+          navigatorKey: PushService.navigatorKey,
           title: 'Connect Do',
 
           // ☀️ TEMA CLARO

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/push_service.dart';
 import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
 import 'package:connect_do/screens/main_content/home/feed_screen.dart';
 import 'package:connect_do/screens/main_content/profile/profile_screen.dart';
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _loadUnreadChatCount();
     _loadProfileCompletion();
+    PushService.registerDevice();
 
     _chatUnreadTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       _loadUnreadChatCount();

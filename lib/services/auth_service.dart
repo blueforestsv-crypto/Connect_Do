@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/services/push_service.dart';
 import 'package:connect_do/core/api/api_config.dart';
 import 'package:connect_do/core/api/google_auth_config.dart';
 import 'package:connect_do/utils/academic_options.dart';
@@ -705,6 +706,9 @@ class AuthService {
   /// "Hola de nuevo" en el login (sin token, se pedirá la contraseña).
   static Future<void> logout({bool forgetUser = true}) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Este teléfono deja de recibir push de la cuenta (antes de borrar tokens).
+    await PushService.unregisterDevice();
 
     // Revoca la sesión en el servidor (mejor esfuerzo: sin red, igual sale).
     final refreshToken = prefs.getString('refresh_token') ?? '';
