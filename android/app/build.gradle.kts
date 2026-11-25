@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.project_ena"
+    namespace = "com.blueforest.connectdo"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973" 
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-    applicationId = "com.example.project_ena"
+    applicationId = "com.blueforest.connectdo"
     minSdk = flutter.minSdkVersion  // Pon el número 21 directamente aquí
     targetSdk = flutter.targetSdkVersion
     versionCode = flutter.versionCode

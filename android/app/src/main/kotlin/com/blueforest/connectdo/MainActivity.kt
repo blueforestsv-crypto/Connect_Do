@@ -1,4 +1,4 @@
-package com.example.project_ena
+package com.blueforest.connectdo
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
