@@ -1,9 +1,22 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/core/api/api_config.dart';
+import 'package:connect_do/core/api/google_auth_config.dart';
+import 'package:connect_do/utils/academic_options.dart';
+
+class AuthException implements Exception {
+  final String message;
+
+  const AuthException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class AuthService {
   const AuthService._();
@@ -21,8 +34,8 @@ class AuthService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Error al iniciar sesión: ${response.statusCode} ${response.body}',
+      throw AuthException(
+        _errorDetail(response, 'No se pudo iniciar sesión. Intenta de nuevo.'),
       );
     }
 
@@ -41,59 +54,393 @@ class AuthService {
     await _syncCurrentProfileFromBackend();
   }
 
-  static Future<void> register({required Map<String, dynamic> userData}) async {
-    final email = userData['email']?.toString().trim() ?? '';
-    final password = userData['password']?.toString() ?? '';
-
-    final firstName =
-        userData['firstName']?.toString().trim() ??
-        userData['first_name']?.toString().trim() ??
-        '';
-
-    final lastName =
-        userData['lastName']?.toString().trim() ??
-        userData['last_name']?.toString().trim() ??
-        '';
-
-    if (email.isEmpty ||
-        password.isEmpty ||
-        firstName.isEmpty ||
-        lastName.isEmpty) {
-      throw Exception('Faltan datos obligatorios para registrar la cuenta.');
-    }
+  // =====================================================
+  // REGISTRO CORTO: CREA LA CUENTA E INICIA SESIÓN
+  // =====================================================
+  /// Crea la cuenta en el backend, inicia sesión y deja la verificación de
+  /// correo pendiente. La contraseña no se guarda en el dispositivo.
+  static Future<void> createAccount({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+    String? university,
+  }) async {
+    final cleanEmail = email.trim();
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/register'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'email': email,
+        'email': cleanEmail,
         'password': password,
-        'first_name': firstName,
-        'last_name': lastName,
+        'first_name': firstName.trim(),
+        'last_name': lastName.trim(),
       }),
     );
 
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Error al registrar usuario: ${response.statusCode} ${response.body}',
+    if (response.statusCode == 409) {
+      throw const AuthException(
+        'Ya existe una cuenta con este correo. Inicia sesión.',
       );
+    }
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw AuthException(
+        _errorDetail(response, 'No se pudo crear la cuenta.'),
+      );
+    }
+
+    // Limpia datos de un usuario anterior antes de iniciar sesión.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('usuario_actual');
+
+    await login(email: cleanEmail, password: password);
+
+    await prefs.setBool(pendingVerificationKey, true);
+
+    if (university != null && university.isNotEmpty) {
+      await _mergeLocalUserData({'university': university});
+      await _syncProfileWithBackend({'university': university});
     }
   }
 
-  static Future<void> registerAndLogin({
-    required Map<String, dynamic> userData,
-  }) async {
-    final email = userData['email']?.toString().trim() ?? '';
-    final password = userData['password']?.toString() ?? '';
+  // =====================================================
+  // OAUTH CON GOOGLE
+  // =====================================================
+  /// El plugin solo admite UNA llamada a initialize(): si se repite (por
+  /// ejemplo, tras un primer intento fallido) lanza "init() has already been
+  /// called". Por eso se guarda el Future y se reutiliza siempre.
+  static Future<void>? _googleInit;
 
-    await register(userData: userData);
+  static Future<void> _ensureGoogleInitialized() {
+    if (!GoogleAuthConfig.isConfigured) {
+      return Future.error(
+        const AuthException(
+          'El inicio con Google aún no está configurado en esta versión.',
+        ),
+      );
+    }
 
-    await login(email: email, password: password);
+    return _googleInit ??= _initializeGoogle();
+  }
 
-    await _mergeLocalUserData(userData, preserveOnlyIfSameUser: true);
+  static Future<void> _initializeGoogle() {
+    final isApple =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS);
 
-    await _syncProfileWithBackend(userData);
+    // En web el ID va como clientId (serverClientId no existe allí).
+    // En Android/iOS va como serverClientId, para que el id_token sea para
+    // el backend.
+    if (kIsWeb) {
+      return GoogleSignIn.instance.initialize(
+        clientId: GoogleAuthConfig.serverClientId,
+      );
+    }
+
+    return GoogleSignIn.instance.initialize(
+      serverClientId: GoogleAuthConfig.serverClientId,
+      clientId:
+          isApple && GoogleAuthConfig.iosClientId.isNotEmpty
+              ? GoogleAuthConfig.iosClientId
+              : null,
+    );
+  }
+
+  /// En web el inicio de sesión ocurre con el botón oficial de Google; la app
+  /// debe preparar el plugin antes de dibujarlo y escuchar estos eventos.
+  static Future<void> prepareGoogleSignIn() => _ensureGoogleInitialized();
+
+  static Stream<GoogleSignInAuthenticationEvent> get googleAuthEvents =>
+      GoogleSignIn.instance.authenticationEvents;
+
+  /// Inicia sesión o crea la cuenta con Google (OAuth 2.0 / OpenID Connect)
+  /// en Android/iOS, abriendo el selector de cuentas.
+  ///
+  /// Devuelve `true` si la cuenta es nueva, `false` si ya existía y `null`
+  /// si la persona canceló el selector de cuentas.
+  static Future<bool?> signInWithGoogle() async {
+    await _ensureGoogleInitialized();
+
+    if (!GoogleSignIn.instance.supportsAuthenticate()) {
+      throw const AuthException(
+        'Este dispositivo no permite iniciar sesión con Google.',
+      );
+    }
+
+    final GoogleSignInAccount account;
+    try {
+      account = await GoogleSignIn.instance.authenticate(
+        scopeHint: const ['email', 'profile'],
+      );
+    } on GoogleSignInException catch (e) {
+      debugPrint('Google Sign-In falló: ${e.code} ${e.description}');
+
+      switch (e.code) {
+        case GoogleSignInExceptionCode.canceled:
+          return null;
+        case GoogleSignInExceptionCode.clientConfigurationError:
+        case GoogleSignInExceptionCode.providerConfigurationError:
+          // Casi siempre: falta el cliente Android en Google Cloud o el
+          // SHA-1 / nombre de paquete no coinciden.
+          throw const AuthException(
+            'Google no reconoce esta versión de la app. '
+            'Revisa el cliente Android (paquete y SHA-1) en Google Cloud.',
+          );
+        case GoogleSignInExceptionCode.uiUnavailable:
+          throw const AuthException(
+            'Este teléfono no tiene una cuenta de Google disponible.',
+          );
+        default:
+          throw AuthException(
+            'No se pudo conectar con Google (${e.code.name}).',
+          );
+      }
+    }
+
+    return completeGoogleSignIn(account);
+  }
+
+  /// Envía el id_token de Google al backend y guarda la sesión.
+  /// Lo usan tanto el flujo móvil como el botón oficial de Google en web.
+  /// Devuelve `true` si la cuenta es nueva.
+  static Future<bool> completeGoogleSignIn(GoogleSignInAccount account) async {
+    final idToken = account.authentication.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw const AuthException('Google no devolvió un token de identidad.');
+    }
+
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'id_token': idToken}),
+    );
+
+    if (response.statusCode != 200) {
+      await GoogleSignIn.instance.signOut();
+      throw AuthException(
+        _errorDetail(response, 'No se pudo iniciar sesión con Google.'),
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final accessToken = data['access_token']?.toString() ?? '';
+    final isNewUser = data['is_new_user'] == true;
+
+    if (accessToken.isEmpty) {
+      throw const AuthException('El backend no devolvió access_token.');
+    }
+
+    await _saveSession(
+      accessToken: accessToken,
+      refreshToken: data['refresh_token']?.toString() ?? '',
+    );
+    await _saveCurrentUser(accessToken);
     await _syncCurrentProfileFromBackend();
+
+    final prefs = await SharedPreferences.getInstance();
+    // Google ya verificó el correo.
+    await prefs.setBool(pendingVerificationKey, false);
+
+    final extra = <String, dynamic>{};
+
+    final photoUrl = account.photoUrl ?? '';
+    final currentJson = prefs.getString('usuario_actual') ?? '';
+    final current =
+        currentJson.isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(currentJson) as Map<String, dynamic>;
+
+    if (photoUrl.isNotEmpty &&
+        (current['google_photo_url']?.toString() ?? '').isEmpty) {
+      extra['google_photo_url'] = photoUrl;
+    }
+
+    if (isNewUser) {
+      final university = AcademicOptions.universityFromEmail(account.email);
+      if (university != null) {
+        extra['university'] = university;
+        await _syncProfileWithBackend({'university': university});
+      }
+    }
+
+    if (extra.isNotEmpty) await _mergeLocalUserData(extra);
+
+    return isNewUser;
+  }
+
+  // =====================================================
+  // VERIFICACIÓN DE CORREO CON CÓDIGO
+  // =====================================================
+  static const String pendingVerificationKey = 'verificacion_pendiente';
+
+  /// Pide al backend un código nuevo. Devuelve el código solo cuando el
+  /// servidor corre en modo development (no hay proveedor de correo).
+  static Future<String?> requestVerificationCode(String email) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/email-verification/request'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email.trim()}),
+    );
+
+    if (response.statusCode != 200) {
+      throw AuthException(
+        _errorDetail(response, 'No se pudo enviar el código.'),
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final debugCode = data['debug_code']?.toString() ?? '';
+
+    return debugCode.isEmpty ? null : debugCode;
+  }
+
+  static Future<void> confirmVerificationCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
+
+    if (token.isEmpty) {
+      throw const AuthException('Tu sesión expiró. Inicia sesión de nuevo.');
+    }
+
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/email-verification/confirm'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'code': code}),
+    );
+
+    if (response.statusCode != 200) {
+      throw AuthException(
+        _errorDetail(response, 'El código es incorrecto o ha vencido.'),
+      );
+    }
+
+    await prefs.setBool(pendingVerificationKey, false);
+  }
+
+  // =====================================================
+  // RECUPERAR / CAMBIAR CONTRASEÑA Y CORREO
+  // =====================================================
+
+  /// Envía un código para restablecer la contraseña. Devuelve el código solo
+  /// si el servidor está en development sin proveedor de correo.
+  static Future<String?> requestPasswordReset(String email) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/password-reset/request'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email.trim()}),
+    );
+    final data = _decodeOrThrow(response, 'No se pudo enviar el código.');
+    final debugCode = data['debug_code']?.toString() ?? '';
+    return debugCode.isEmpty ? null : debugCode;
+  }
+
+  static Future<void> confirmPasswordReset({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/password-reset/confirm'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email.trim(),
+        'code': code,
+        'new_password': newPassword,
+      }),
+    );
+    _decodeOrThrow(response, 'No se pudo cambiar la contraseña.');
+  }
+
+  /// [currentPassword] puede ir vacío si la cuenta se creó con Google y
+  /// todavía no tiene contraseña.
+  static Future<String> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/password/change'),
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        if (currentPassword.isNotEmpty) 'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
+    );
+    final data = _decodeOrThrow(response, 'No se pudo cambiar la contraseña.');
+    return data['message']?.toString() ?? 'Contraseña actualizada.';
+  }
+
+  static Future<String?> requestEmailChange({
+    required String newEmail,
+    required String password,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/email-change/request'),
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        'new_email': newEmail.trim(),
+        if (password.isNotEmpty) 'password': password,
+      }),
+    );
+    final data = _decodeOrThrow(response, 'No se pudo enviar el código.');
+    final debugCode = data['debug_code']?.toString() ?? '';
+    return debugCode.isEmpty ? null : debugCode;
+  }
+
+  /// Confirma el correo nuevo y lo guarda también en el teléfono.
+  static Future<void> confirmEmailChange(String code) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/email-change/confirm'),
+      headers: await _authHeaders(),
+      body: jsonEncode({'code': code}),
+    );
+    final data = _decodeOrThrow(response, 'No se pudo cambiar el correo.');
+    final email = data['email']?.toString() ?? '';
+    if (email.isNotEmpty) await _mergeLocalUserData({'email': email});
+  }
+
+  static Future<Map<String, String>> _authHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
+    if (token.isEmpty) {
+      throw const AuthException('Tu sesión expiró. Inicia sesión de nuevo.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  static Map<String, dynamic> _decodeOrThrow(
+    http.Response response,
+    String fallback,
+  ) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthException(_errorDetail(response, fallback));
+    }
+    try {
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  static String _errorDetail(http.Response response, String fallback) {
+    try {
+      final data = jsonDecode(response.body);
+
+      if (data is Map && data['detail'] is String) {
+        return data['detail'] as String;
+      }
+    } catch (_) {}
+
+    return fallback;
   }
 
   static Future<void> _saveSession({
@@ -349,14 +696,44 @@ class AuthService {
     }
   }
 
-  static Future<void> logout() async {
+  /// Trae del servidor los datos del perfil (teléfono, carrera, foto...) y
+  /// los guarda en el teléfono. No falla si no hay conexión.
+  static Future<void> refreshProfileFromBackend() =>
+      _syncCurrentProfileFromBackend();
+
+  /// Cierra la sesión. Con [forgetUser] en false se conserva la tarjeta de
+  /// "Hola de nuevo" en el login (sin token, se pedirá la contraseña).
+  static Future<void> logout({bool forgetUser = true}) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Revoca la sesión en el servidor (mejor esfuerzo: sin red, igual sale).
+    final refreshToken = prefs.getString('refresh_token') ?? '';
+    if (refreshToken.isNotEmpty) {
+      try {
+        await http
+            .post(
+              Uri.parse('${ApiConfig.baseUrl}/auth/logout'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'refresh_token': refreshToken}),
+            )
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {}
+    }
 
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
     await prefs.setBool('sesion_activa', false);
+    await prefs.remove(pendingVerificationKey);
+
+    // Para que la próxima vez se muestre el selector de cuentas de Google.
+    if (_googleInit != null) {
+      try {
+        await _googleInit;
+        await GoogleSignIn.instance.signOut();
+      } catch (_) {}
+    }
 
     // Para evitar que aparezca usuario anterior en login rápido.
-    await prefs.remove('usuario_actual');
+    if (forgetUser) await prefs.remove('usuario_actual');
   }
 }

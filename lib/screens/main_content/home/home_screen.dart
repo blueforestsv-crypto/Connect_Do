@@ -7,7 +7,10 @@ import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
 import 'package:connect_do/screens/main_content/home/feed_screen.dart';
 import 'package:connect_do/screens/main_content/profile/profile_screen.dart';
 import 'package:connect_do/screens/main_content/publication/newpublication_screen.dart';
+import 'package:connect_do/helpers/profile_completion.dart';
+import 'package:connect_do/screens/profile_setup/complete_profile_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
+import 'package:connect_do/services/user_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
   int _unreadChatCount = 0;
 
   Timer? _chatUnreadTimer;
+
+  // Tarjeta "Completa tu perfil": se oculta al cerrarla hasta la próxima sesión.
+  int _profilePercent = 100;
+  bool _profileCardDismissed = false;
 
   final ScrollController _feedScrollController = ScrollController();
 
@@ -45,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
 
     _loadUnreadChatCount();
+    _loadProfileCompletion();
 
     _chatUnreadTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       _loadUnreadChatCount();
@@ -76,6 +84,89 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadProfileCompletion() async {
+    final user = await UserService.getUser();
+    if (!mounted) return;
+    setState(() => _profilePercent = ProfileCompletion.percent(user));
+  }
+
+  Future<void> _openCompleteProfile() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
+    );
+    _loadProfileCompletion();
+  }
+
+  Widget _buildProfileCard() {
+    return Material(
+      color: const Color(0xFF2563EB),
+      borderRadius: BorderRadius.circular(20),
+      elevation: 6,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _openCompleteProfile,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: _profilePercent / 100,
+                      strokeWidth: 4,
+                      backgroundColor: Colors.white24,
+                      color: const Color(0xFF22C55E),
+                    ),
+                    Text(
+                      '$_profilePercent%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Completa tu perfil',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Carrera, habilidades y CV para postularte',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Ocultar',
+                icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                onPressed: () => setState(() => _profileCardDismissed = true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _goToFeed({bool refresh = false}) {
     setState(() {
       _selectedIndex = 0;
@@ -98,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _goToPage(int index) {
     if (index == 0) {
+      _loadProfileCompletion();
       _goToFeed(refresh: true);
       return;
     }
@@ -134,13 +226,13 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               color:
                   isSelected
-                      ? const Color(0xFF10B970).withValues(alpha: 0.15)
+                      ? const Color(0xFF22C55E).withValues(alpha: 0.15)
                       : Colors.transparent,
               shape: BoxShape.circle,
             ),
             child: Icon(
               isSelected ? iconFill : iconRegular,
-              color: isSelected ? const Color(0xFF10B970) : Colors.grey[400],
+              color: isSelected ? const Color(0xFF22C55E) : Colors.grey[400],
               size: 28,
             ),
           ),
@@ -188,7 +280,20 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         extendBody: true,
-        body: IndexedStack(index: _selectedIndex, children: _pages),
+        body: Stack(
+          children: [
+            IndexedStack(index: _selectedIndex, children: _pages),
+            if (_selectedIndex == 0 &&
+                _profilePercent < 100 &&
+                !_profileCardDismissed)
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(context).padding.bottom + 100,
+                child: _buildProfileCard(),
+              ),
+          ],
+        ),
         bottomNavigationBar: SafeArea(
           child: Container(
             margin: const EdgeInsets.only(left: 20, right: 20, bottom: 20),

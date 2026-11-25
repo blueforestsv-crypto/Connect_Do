@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/publication_model.dart';
-import 'package:connect_do/services/publication_service.dart';
-import 'package:connect_do/widgets/publication_card.dart';
+import 'package:connect_do/services/publication_api_service.dart';
+import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/auth/auth_layout.dart';
+import 'package:connect_do/widgets/publication_card.dart';
 
+/// Una publicación abierta desde una notificación.
 class PublicationDetailScreen extends StatefulWidget {
   final String publicationId;
 
@@ -16,144 +21,154 @@ class PublicationDetailScreen extends StatefulWidget {
 }
 
 class _PublicationDetailScreenState extends State<PublicationDetailScreen> {
-  bool isLoading = true;
-  PublicationModel? publication;
+  final PublicationApiService _api = PublicationApiService();
+
+  bool _isLoading = true;
+  PublicationModel? _publication;
 
   @override
   void initState() {
     super.initState();
-    _loadPublication();
+    _load();
   }
 
-  Future<void> _loadPublication() async {
-    final publications = await PublicationService.getPublications();
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
 
     PublicationModel? found;
-
     try {
-      found = publications.firstWhere(
-        (post) => post.id == widget.publicationId,
-      );
+      found = await _api.getPublication(widget.publicationId);
     } catch (_) {
       found = null;
     }
 
     if (!mounted) return;
-
     setState(() {
-      publication = found;
-      isLoading = false;
+      _publication = found;
+      _isLoading = false;
     });
   }
 
-  Future<void> _deletePublication() async {
+  Future<void> _delete() async {
+    final publication = _publication;
     if (publication == null) return;
 
-    await PublicationService.deletePublication(publication!.id);
-
-    if (!mounted) return;
-
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Publicación eliminada'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  Widget _buildNotFoundState({
-    required Color textColor,
-    required Color subtitleColor,
-  }) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(
-        30,
-        0,
-        30,
-        ResponsiveHelper.bottomSafe(context) + 40,
-      ),
-      children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
-
-        Icon(Icons.article_outlined, size: 65, color: subtitleColor),
-
-        const SizedBox(height: 14),
-
-        Text(
-          'Esta publicación ya no está disponible',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        Text(
-          'Puede que haya sido eliminada o que todavía no esté sincronizada.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: subtitleColor, fontSize: 14, height: 1.4),
-        ),
-      ],
-    );
+    try {
+      await _api.deletePublication(publication.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAuthMessage(
+        context,
+        'Publicación eliminada',
+        type: AuthMessageType.info,
+      );
+    } catch (_) {
+      if (mounted) {
+        showAuthMessage(context, 'No se pudo eliminar la publicación.');
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    final bgColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
-    final textColor = isDarkMode ? Colors.white : Colors.black87;
-    final subtitleColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
+    final palette = AuthPalette.of(context);
 
     return Scaffold(
-      backgroundColor: bgColor,
-      resizeToAvoidBottomInset: true,
+      backgroundColor: palette.background,
       appBar: AppBar(
-        backgroundColor: bgColor,
+        backgroundColor: palette.background,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: IconThemeData(color: textColor),
-        title: Text(
-          'Publicación',
-          style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+        automaticallyImplyLeading: false,
+        titleSpacing: 12,
+        title: Row(
+          children: [
+            AuthBackButton(onTap: () => Navigator.maybePop(context)),
+            const SizedBox(width: 12),
+            Text(
+              'Publicación',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
+            ),
+          ],
         ),
       ),
       body:
-          isLoading
+          _isLoading
               ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF22C55E)),
+                child: CircularProgressIndicator(color: Brand.blue),
               )
-              : publication == null
-              ? _buildNotFoundState(
-                textColor: textColor,
-                subtitleColor: subtitleColor,
-              )
+              : _publication == null
+              ? _buildNotFound(palette)
               : RefreshIndicator(
-                color: const Color(0xFF22C55E),
-                backgroundColor:
-                    isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-                onRefresh: _loadPublication,
+                color: Brand.blue,
+                onRefresh: _load,
                 child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.only(
-                    top: 12,
-                    bottom: ResponsiveHelper.bottomSafe(context) + 40,
+                    top: 8,
+                    bottom: ResponsiveHelper.bottomSafe(context) + 24,
                   ),
                   children: [
                     PublicationCard(
-                      post: publication!,
-                      onDelete: _deletePublication,
+                      post: _publication!,
+                      onDelete: _delete,
+                      onChanged:
+                          (updated) => setState(() => _publication = updated),
                     ),
                   ],
                 ),
               ),
+    );
+  }
+
+  Widget _buildNotFound(AuthPalette palette) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: Brand.blue.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                PhosphorIconsRegular.newspaper,
+                size: 32,
+                color: Brand.blue,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Esta publicación ya no está disponible',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Puede que la hayan eliminado o que ya no tengas acceso.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 14,
+                color: palette.body,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

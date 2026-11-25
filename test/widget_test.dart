@@ -11,18 +11,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:connect_do/screens/auth/register/welcome_screen.dart';
 
 void main() {
-  testWidgets('La pantalla de bienvenida carga con animación continua', (
+  testWidgets('La pantalla de bienvenida muestra la marca y las acciones', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: WelcomeScreen()));
 
     await tester.pump();
 
-    expect(find.text('¡Bienvenido a Connect Do!'), findsOneWidget);
-    expect(find.text('Regístrate'), findsOneWidget);
-    expect(find.text('Inicia sesión'), findsOneWidget);
+    expect(find.text('Oportunidades reales'), findsOneWidget);
+    expect(find.text('Crear cuenta'), findsOneWidget);
+    expect(find.text('Ya tengo cuenta'), findsOneWidget);
 
-    // Avanzamos la animación sin esperar que termine.
     await tester.pump(const Duration(seconds: 1));
 
     // La pantalla sigue montada y funcional.

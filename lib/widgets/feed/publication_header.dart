@@ -1,346 +1,261 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/widgets/feed/user_avatar.dart';
 
+/// Autor, tiempo, visibilidad y menú de opciones de una publicación.
 class PublicationHeader extends StatelessWidget {
   final PublicationModel post;
+
+  /// Eliminar (solo se ofrece si la publicación es del usuario actual).
   final VoidCallback? onDelete;
 
-  const PublicationHeader({super.key, required this.post, this.onDelete});
+  /// Ocultar del feed (solo se ofrece si no es del usuario actual).
+  final VoidCallback? onHide;
+
+  const PublicationHeader({
+    super.key,
+    required this.post,
+    this.onDelete,
+    this.onHide,
+  });
+
+  IconData get _visibilityIcon {
+    switch (post.visibility) {
+      case 'public':
+        return PhosphorIconsRegular.globeHemisphereWest;
+      case 'private':
+        return PhosphorIconsRegular.lockSimple;
+      default:
+        return PhosphorIconsRegular.usersThree;
+    }
+  }
+
+  bool get _canDelete => post.isMine && onDelete != null;
+  bool get _canHide => !post.isMine && onHide != null;
 
   @override
   Widget build(BuildContext context) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    final Color textColor = isDarkMode ? Colors.white : Colors.black87;
-    final Color subtitleColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
+    final palette = AuthPalette.of(context);
 
     return Row(
       children: [
-        _buildAvatar(isDarkMode),
-
+        UserAvatar(name: post.userName, photo: post.userPhoto),
         const SizedBox(width: 12),
-
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 post.userName,
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: palette.title,
+                ),
               ),
-
-              Text(
-                "Ahora",
-                style: TextStyle(color: subtitleColor, fontSize: 12),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Text(
+                    timeAgo(post.createdAt),
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 12.5,
+                      color: palette.muted,
+                    ),
+                  ),
+                  Text(
+                    '  ·  ',
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+                  Tooltip(
+                    message: post.visibilityLabel,
+                    child: Icon(
+                      _visibilityIcon,
+                      size: 13,
+                      color: palette.muted,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-
-        IconButton(
-          onPressed: () => _showPostOptions(context, isDarkMode),
-          icon: Icon(
-            Icons.more_horiz,
-            color: isDarkMode ? Colors.white70 : Colors.black54,
+        if (_canDelete || _canHide)
+          IconButton(
+            tooltip: 'Opciones',
+            onPressed: () => _showOptions(context),
+            icon: Icon(
+              PhosphorIconsRegular.dotsThree,
+              color: palette.muted,
+              size: 24,
+            ),
           ),
-        ),
       ],
     );
   }
 
-  // ===============================
-  // AVATAR
-  // ===============================
-  Widget _buildAvatar(bool isDarkMode) {
-    final Color avatarBgColor =
-        isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200;
-
-    final String photo = post.userPhoto.trim();
-
-    if (photo.isEmpty || photo == 'null') {
-      return _defaultAvatar(isDarkMode, avatarBgColor);
-    }
-
-    // Foto en URL
-    if (photo.startsWith('http://') || photo.startsWith('https://')) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundColor: avatarBgColor,
-        backgroundImage: NetworkImage(photo),
-        onBackgroundImageError: (_, __) {},
-      );
-    }
-
-    // Foto en base64
-    final Uint8List? imageBytes = _decodeBase64Image(photo);
-
-    if (imageBytes != null) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundColor: avatarBgColor,
-        backgroundImage: MemoryImage(imageBytes),
-      );
-    }
-
-    return _defaultAvatar(isDarkMode, avatarBgColor);
-  }
-
-  Widget _defaultAvatar(bool isDarkMode, Color avatarBgColor) {
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: avatarBgColor,
-      child: Text(
-        _getInitials(),
-        style: TextStyle(
-          color: isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700,
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
-        ),
-      ),
-    );
-  }
-
-  Uint8List? _decodeBase64Image(String value) {
-    try {
-      String cleanValue = value.trim();
-
-      if (cleanValue.contains(',')) {
-        cleanValue = cleanValue.split(',').last;
-      }
-
-      if (cleanValue.isEmpty) {
-        return null;
-      }
-
-      return base64Decode(cleanValue);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String _getInitials() {
-    final cleanName = post.userName.trim();
-
-    if (cleanName.isEmpty) {
-      return 'U';
-    }
-
-    final parts =
-        cleanName.split(' ').where((part) => part.trim().isNotEmpty).toList();
-
-    if (parts.isEmpty) {
-      return 'U';
-    }
-
-    if (parts.length == 1) {
-      return parts.first[0].toUpperCase();
-    }
-
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-
-  // ===============================
-  // OPCIONES DE PUBLICACIÓN
-  // ===============================
-  void _showPostOptions(BuildContext context, bool isDarkMode) {
+  void _showOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? Colors.grey.shade700 : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
 
-                _optionTile(
-                  context,
-                  isDarkMode: isDarkMode,
-                  icon: Icons.edit_outlined,
-                  title: 'Editar publicación',
-                  subtitle: 'Modificar el contenido publicado',
-                  color: const Color(0xFF2563EB),
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Editar publicación próximamente'),
-                      ),
-                    );
-                  },
-                ),
-
-                _optionTile(
-                  context,
-                  isDarkMode: isDarkMode,
-                  icon: Icons.visibility_off_outlined,
-                  title: 'Ocultar publicación',
-                  subtitle: 'Dejar de ver este contenido en tu feed',
-                  color: Colors.orange,
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Publicación ocultada temporalmente'),
-                      ),
-                    );
-                  },
-                ),
-
-                _optionTile(
-                  context,
-                  isDarkMode: isDarkMode,
-                  icon: Icons.flag_outlined,
-                  title: 'Reportar',
-                  subtitle: 'Informar contenido inapropiado',
-                  color: Colors.deepOrange,
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Reporte enviado para revisión'),
-                      ),
-                    );
-                  },
-                ),
-
-                Divider(
-                  color: isDarkMode ? Colors.white12 : Colors.grey.shade300,
-                ),
-
-                _optionTile(
-                  context,
-                  isDarkMode: isDarkMode,
-                  icon: Icons.delete_outline,
-                  title: 'Eliminar publicación',
-                  subtitle: 'Borrar esta publicación del feed',
-                  color: Colors.red,
-                  onTap: () {
-                    Navigator.pop(context);
-                    _confirmDelete(context, isDarkMode);
-                  },
-                ),
-
-                const SizedBox(height: 4),
-              ],
+        return Container(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+          decoration: BoxDecoration(
+            color: palette.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(Brand.radiusLg),
             ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: palette.fieldBorder,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              if (_canHide)
+                _OptionTile(
+                  icon: PhosphorIconsRegular.eyeSlash,
+                  color: palette.label,
+                  title: 'Ocultar publicación',
+                  subtitle: 'Dejarás de verla en tu inicio',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    onHide!();
+                  },
+                ),
+              if (_canDelete)
+                _OptionTile(
+                  icon: PhosphorIconsRegular.trash,
+                  color: Brand.danger,
+                  title: 'Eliminar publicación',
+                  subtitle: 'Se borrará para todos',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmDelete(context);
+                  },
+                ),
+            ],
           ),
         );
       },
     );
   }
 
-  // ===============================
-  // CONFIRMAR ELIMINACIÓN
-  // ===============================
-  void _confirmDelete(BuildContext context, bool isDarkMode) {
+  void _confirmDelete(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
     showDialog(
       context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Eliminar publicación',
-            style: TextStyle(
-              color: isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: palette.card,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Brand.radiusLg),
             ),
-          ),
-          content: Text(
-            '¿Seguro que quieres eliminar esta publicación? Esta acción no se puede deshacer.',
-            style: TextStyle(
-              color: isDarkMode ? Colors.white70 : Colors.black87,
+            title: Text(
+              '¿Eliminar publicación?',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancelar',
-                style: TextStyle(
-                  color: isDarkMode ? Colors.white70 : Colors.black54,
+            content: Text(
+              'Se borrará junto con sus comentarios y me gusta. '
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                height: 1.4,
+                color: palette.body,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancelar', style: TextStyle(color: palette.body)),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.danger,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Brand.radiusSm),
+                  ),
                 ),
-              ),
-            ),
-
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-
-                if (onDelete != null) {
+                onPressed: () {
+                  Navigator.pop(dialogContext);
                   onDelete!();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                elevation: 0,
+                },
+                child: const Text('Eliminar'),
               ),
-              child: const Text('Eliminar'),
-            ),
-          ],
-        );
-      },
+            ],
+          ),
     );
   }
+}
 
-  // ===============================
-  // ITEM DEL MENÚ
-  // ===============================
-  Widget _optionTile(
-    BuildContext context, {
-    required bool isDarkMode,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
+class _OptionTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _OptionTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.12),
-        child: Icon(icon, color: color),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Brand.radiusMd),
+      ),
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(Brand.radiusSm),
+        ),
+        child: Icon(icon, color: color, size: 20),
       ),
       title: Text(
         title,
         style: TextStyle(
-          color: isDarkMode ? Colors.white : Colors.black87,
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
+          fontFamily: Brand.displayFont,
+          fontWeight: FontWeight.w600,
+          color: color == Brand.danger ? Brand.danger : palette.title,
         ),
       ),
       subtitle: Text(
         subtitle,
         style: TextStyle(
-          color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
-          fontSize: 12,
+          fontFamily: Brand.displayFont,
+          fontSize: 12.5,
+          color: palette.muted,
         ),
       ),
       onTap: onTap,

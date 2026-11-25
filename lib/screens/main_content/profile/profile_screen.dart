@@ -1,18 +1,20 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/publication_model.dart';
-import 'package:connect_do/services/theme_service.dart';
+import 'package:connect_do/screens/account/change_email_screen.dart';
+import 'package:connect_do/screens/account/change_password_screen.dart';
+import 'package:connect_do/screens/auth/login/login_screen.dart';
+import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
+import 'package:connect_do/screens/profile_setup/complete_profile_screen.dart';
+import 'package:connect_do/services/auth_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/saved_publication_service.dart';
-
-import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
-import 'package:connect_do/screens/auth/login/login_screen.dart';
-
-import 'package:connect_do/widgets/publication_card.dart';
+import 'package:connect_do/services/theme_service.dart';
+import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/publication_card.dart';
 
 import 'widgets/profile_header.dart';
 import 'widgets/profile_technical_tab.dart';
@@ -25,728 +27,503 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _isDarkMode = false;
-  bool _isPrivateProfile = false;
-
-  int _profileTechnicalRefresh = 0;
+  /// Sube cada vez que el perfil cambia, para que encabezado y pestaña
+  /// vuelvan a leer los datos.
+  int _refreshKey = 0;
 
   @override
   void initState() {
     super.initState();
-
-    _isDarkMode = ThemeService.isDarkMode;
-    _loadProfileSettings();
+    _syncFromServer();
   }
 
-  // ============================
-  // CARGAR AJUSTES DEL PERFIL
-  // ============================
-  Future<void> _loadProfileSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (!mounted) return;
-
-    setState(() {
-      _isPrivateProfile = prefs.getBool('isPrivateProfile') ?? false;
-    });
+  Future<void> _syncFromServer() async {
+    await AuthService.refreshProfileFromBackend();
+    if (mounted) setState(() => _refreshKey++);
   }
 
-  // ============================
-  // GUARDAR PERFIL PRIVADO
-  // ============================
-  Future<void> _savePrivateProfile(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.setBool('isPrivateProfile', value);
+  Future<void> _openEditProfile() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
+    );
+    if (mounted) setState(() => _refreshKey++);
   }
 
-  // ============================
-  // CERRAR SESIÓN
-  // ============================
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Scaffold(
+      backgroundColor: palette.background,
+      body: SafeArea(
+        bottom: false,
+        child: DefaultTabController(
+          length: 4,
+          child: NestedScrollView(
+            headerSliverBuilder:
+                (context, _) => [
+                  SliverToBoxAdapter(
+                    child: ProfileHeader(
+                      refreshKey: _refreshKey,
+                      onEditProfile: _openEditProfile,
+                      onOpenSettings: _openSettings,
+                    ),
+                  ),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _TabBarDelegate(palette: palette),
+                  ),
+                ],
+            body: TabBarView(
+              children: [
+                ProfileTechnicalTab(
+                  refreshKey: _refreshKey,
+                  onEditProfile: _openEditProfile,
+                  onProfileChanged: () => setState(() => _refreshKey++),
+                ),
+                const UserPublicationsTab(),
+                const ContactsScreen(showAppBar: false),
+                const SavedPublicationsTab(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // =====================================================
+  // CONFIGURACIÓN
+  // =====================================================
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (sheetContext) => _SettingsSheet(
+            onEditProfile: () {
+              Navigator.pop(sheetContext);
+              _openEditProfile();
+            },
+            onChangeEmail: () async {
+              Navigator.pop(sheetContext);
+              final changed = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const ChangeEmailScreen()),
+              );
+              if (changed == true && mounted) setState(() => _refreshKey++);
+            },
+            onChangePassword: () {
+              Navigator.pop(sheetContext);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+              );
+            },
+            onLogout: () {
+              Navigator.pop(sheetContext);
+              _confirmLogout();
+            },
+          ),
+    );
+  }
+
+  void _confirmLogout() {
+    final palette = AuthPalette.of(context);
+
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: palette.card,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Brand.radiusLg),
+            ),
+            title: Text(
+              '¿Cerrar sesión?',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
+            ),
+            content: Text(
+              'Podrás volver a entrar con tu correo o con Google.',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                height: 1.4,
+                color: palette.body,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancelar', style: TextStyle(color: palette.body)),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.danger,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Brand.radiusSm),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _logout();
+                },
+                child: const Text('Cerrar sesión'),
+              ),
+            ],
+          ),
+    );
+  }
+
   Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.setBool('sesion_activa', false);
-    await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
-    await prefs.remove('accessToken');
-    await prefs.remove('token');
-
-    // No borramos usuario_actual para conservar datos locales:
-    // foto, CV, teléfono, habilidades, etc.
+    // Se conserva la tarjeta "Hola de nuevo" del login.
+    await AuthService.logout(forgetUser: false);
 
     if (!mounted) return;
-
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
     );
   }
+}
+
+// =====================================================
+// BARRA DE PESTAÑAS FIJA
+// =====================================================
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  final AuthPalette palette;
+
+  _TabBarDelegate({required this.palette});
 
   @override
-  Widget build(BuildContext context) {
-    final bgColor = _isDarkMode ? const Color(0xFF121212) : Colors.white;
+  double get minExtent => 60;
 
-    final tabTextColor = _isDarkMode ? Colors.white : const Color(0xFF2563EB);
+  @override
+  double get maxExtent => 60;
 
-    final unselectedTabColor =
-        _isDarkMode ? Colors.white70 : const Color(0xFF22C55E);
-
-    return Scaffold(
-      backgroundColor: bgColor,
-      resizeToAvoidBottomInset: true,
-      body: DefaultTabController(
-        length: 4,
-        child: Column(
-          children: [
-            ProfileHeader(isDarkMode: _isDarkMode, onMenuTap: _showMainMenu),
-
-            Container(
-              color: bgColor,
-              child: TabBar(
-                isScrollable: true,
-                indicatorColor: const Color(0xFF2563EB),
-                labelColor: tabTextColor,
-                unselectedLabelColor: unselectedTabColor,
-                tabs: const [
-                  Tab(text: "Perfil técnico"),
-                  Tab(text: "Publicaciones"),
-                  Tab(text: "Red"),
-                  Tab(text: "Guardadas"),
-                ],
+  @override
+  Widget build(context, shrinkOffset, overlapsContent) {
+    return Container(
+      color: palette.background,
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: palette.fieldFill,
+          borderRadius: BorderRadius.circular(Brand.radiusMd),
+          border: Border.all(color: palette.cardBorder),
+        ),
+        child: TabBar(
+          dividerColor: Colors.transparent,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicator: BoxDecoration(
+            color: palette.card,
+            borderRadius: BorderRadius.circular(Brand.radiusSm),
+            boxShadow: [
+              BoxShadow(
+                color: palette.shadow,
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
-            ),
-
-            Expanded(
-              child: TabBarView(
-                children: [
-                  ProfileTechnicalTab(
-                    key: ValueKey(_profileTechnicalRefresh),
-                    isDarkMode: _isDarkMode,
-                    isPrivateProfile: _isPrivateProfile,
-                  ),
-
-                  const UserPublicationsTab(),
-
-                  const ContactsScreen(),
-
-                  const SavedPublicationsTab(),
-                ],
-              ),
-            ),
+            ],
+          ),
+          labelColor: palette.title,
+          unselectedLabelColor: palette.muted,
+          labelPadding: EdgeInsets.zero,
+          labelStyle: const TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          tabs: const [
+            Tab(text: 'Perfil'),
+            Tab(text: 'Posts'),
+            Tab(text: 'Red'),
+            Tab(text: 'Guardadas'),
           ],
         ),
       ),
     );
   }
 
-  // ================= MENU PRINCIPAL =================
-  void _showMainMenu() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              0,
-              12,
-              0,
-              ResponsiveHelper.bottomSafe(context) + 12,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[400],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
+  @override
+  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
+      oldDelegate.palette.isDark != palette.isDark;
+}
 
-                ListTile(
-                  leading: Icon(
-                    Icons.settings,
-                    color: _isDarkMode ? Colors.white : const Color(0xFF2563EB),
-                  ),
-                  title: Text(
-                    "Configuración",
-                    style: TextStyle(
-                      color: _isDarkMode ? Colors.white : Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showConfigMenu();
+// =====================================================
+// HOJA DE CONFIGURACIÓN
+// =====================================================
+class _SettingsSheet extends StatefulWidget {
+  final VoidCallback onEditProfile;
+  final VoidCallback onChangeEmail;
+  final VoidCallback onChangePassword;
+  final VoidCallback onLogout;
+
+  const _SettingsSheet({
+    required this.onEditProfile,
+    required this.onChangeEmail,
+    required this.onChangePassword,
+    required this.onLogout,
+  });
+
+  @override
+  State<_SettingsSheet> createState() => _SettingsSheetState();
+}
+
+class _SettingsSheetState extends State<_SettingsSheet> {
+  bool _isDark = ThemeService.isDarkMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        ResponsiveHelper.bottomSafe(context) + 16,
+      ),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(Brand.radiusLg),
+        ),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: palette.fieldBorder,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Configuración',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _group(palette, 'Cuenta', [
+              _SettingsTile(
+                icon: PhosphorIconsRegular.userCircle,
+                title: 'Editar perfil',
+                subtitle: 'Estudios, habilidades, teléfono y CV',
+                onTap: widget.onEditProfile,
+              ),
+              _SettingsTile(
+                icon: PhosphorIconsRegular.envelopeSimple,
+                title: 'Cambiar correo',
+                subtitle: 'Te enviaremos un código al correo nuevo',
+                onTap: widget.onChangeEmail,
+              ),
+              _SettingsTile(
+                icon: PhosphorIconsRegular.lockSimple,
+                title: 'Cambiar contraseña',
+                onTap: widget.onChangePassword,
+              ),
+            ]),
+            _group(palette, 'Preferencias', [
+              _SettingsTile(
+                icon: PhosphorIconsRegular.moon,
+                title: 'Modo oscuro',
+                trailing: Switch.adaptive(
+                  value: _isDark,
+                  activeTrackColor: Brand.blue,
+                  onChanged: (value) async {
+                    setState(() => _isDark = value);
+                    await ThemeService.setDarkMode(value);
                   },
                 ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ================= CONFIRMAR CIERRE DE SESIÓN =================
-  void _confirmLogout() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            "Cerrar sesión",
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Text(
-            "¿Seguro que quieres cerrar sesión?",
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white70 : Colors.black54,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancelar"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _logout();
-              },
-              child: const Text(
-                "Cerrar sesión",
-                style: TextStyle(color: Colors.red),
               ),
-            ),
+              const _SettingsTile(
+                icon: PhosphorIconsRegular.eyeSlash,
+                title: 'Perfil privado',
+                subtitle: 'Elegir quién ve tu información',
+                comingSoon: true,
+              ),
+            ]),
+            _group(palette, null, [
+              _SettingsTile(
+                icon: PhosphorIconsRegular.signOut,
+                title: 'Cerrar sesión',
+                danger: true,
+                onTap: widget.onLogout,
+              ),
+            ]),
           ],
-        );
-      },
-    );
-  }
-
-  // ================= CAMBIAR TELÉFONO =================
-  Future<void> _showChangePhoneDialog() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final userJson = prefs.getString('usuario_actual');
-
-    String currentPhone = '';
-
-    if (userJson != null && userJson.isNotEmpty) {
-      try {
-        final userData = jsonDecode(userJson) as Map<String, dynamic>;
-        currentPhone = userData['phone']?.toString() ?? '';
-      } catch (_) {
-        currentPhone = '';
-      }
-    }
-
-    if (!mounted) return;
-
-    final controller = TextEditingController(text: currentPhone);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Cambiar número de teléfono',
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.phone,
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'Ej. 7777-7777',
-              hintStyle: TextStyle(
-                color: _isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-              helperText: 'Se actualizará localmente en el perfil técnico.',
-              helperStyle: TextStyle(
-                color: _isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                final phone = controller.text.trim();
-
-                final prefs = await SharedPreferences.getInstance();
-                final userJson = prefs.getString('usuario_actual');
-
-                Map<String, dynamic> userData = {};
-
-                if (userJson != null && userJson.isNotEmpty) {
-                  try {
-                    userData = jsonDecode(userJson) as Map<String, dynamic>;
-                  } catch (_) {
-                    userData = {};
-                  }
-                }
-
-                userData['phone'] = phone;
-
-                await prefs.setString('usuario_actual', jsonEncode(userData));
-
-                if (!mounted) return;
-
-                setState(() {
-                  _profileTechnicalRefresh++;
-                });
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Teléfono actualizado'),
-                    backgroundColor: Color(0xFF22C55E),
-                  ),
-                );
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ================= CAMBIAR CORREO VISUAL =================
-  void _showChangeEmailDialog() {
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Cambiar correo',
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.emailAddress,
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'nuevo.correo@ejemplo.com',
-              hintStyle: TextStyle(
-                color: _isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-              helperText: 'Versión demo: aún no cambia en backend.',
-              helperStyle: TextStyle(
-                color: _isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Cambio de correo disponible próximamente'),
-                    backgroundColor: Color(0xFF2563EB),
-                  ),
-                );
-              },
-              child: const Text('Solicitar cambio'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ================= CAMBIAR CONTRASEÑA VISUAL =================
-  void _showChangePasswordDialog() {
-    final currentPasswordController = TextEditingController();
-    final newPasswordController = TextEditingController();
-    final confirmPasswordController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Cambiar contraseña',
-            style: TextStyle(
-              color: _isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: currentPasswordController,
-                  obscureText: true,
-                  style: TextStyle(
-                    color: _isDarkMode ? Colors.white : Colors.black87,
-                  ),
-                  cursorColor: const Color(0xFF22C55E),
-                  decoration: InputDecoration(
-                    labelText: 'Contraseña actual',
-                    labelStyle: TextStyle(
-                      color: _isDarkMode ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: newPasswordController,
-                  obscureText: true,
-                  style: TextStyle(
-                    color: _isDarkMode ? Colors.white : Colors.black87,
-                  ),
-                  cursorColor: const Color(0xFF22C55E),
-                  decoration: InputDecoration(
-                    labelText: 'Nueva contraseña',
-                    labelStyle: TextStyle(
-                      color: _isDarkMode ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: confirmPasswordController,
-                  obscureText: true,
-                  style: TextStyle(
-                    color: _isDarkMode ? Colors.white : Colors.black87,
-                  ),
-                  cursorColor: const Color(0xFF22C55E),
-                  decoration: InputDecoration(
-                    labelText: 'Confirmar nueva contraseña',
-                    labelStyle: TextStyle(
-                      color: _isDarkMode ? Colors.white70 : Colors.black54,
-                    ),
-                    helperText: 'Versión demo: aún no cambia en backend.',
-                    helperStyle: TextStyle(
-                      color: _isDarkMode ? Colors.white54 : Colors.grey,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                final newPassword = newPasswordController.text.trim();
-                final confirmPassword = confirmPasswordController.text.trim();
-
-                if (newPassword.isEmpty || confirmPassword.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Completa la nueva contraseña'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-
-                if (newPassword != confirmPassword) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Las contraseñas no coinciden'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Cambio de contraseña disponible próximamente',
-                    ),
-                    backgroundColor: Color(0xFF2563EB),
-                  ),
-                );
-              },
-              child: const Text('Actualizar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ================= CONFIGURACIÓN =================
-  void _showConfigMenu() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  12,
-                  20,
-                  ResponsiveHelper.bottomSafe(context) + 20,
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 18),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[400],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
+    );
+  }
 
-                      Text(
-                        "Configuración",
-                        style: TextStyle(
-                          color: _isDarkMode ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      SwitchListTile(
-                        activeThumbColor: const Color(0xFF22C55E),
-                        title: Text(
-                          "Modo Oscuro",
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          "Aplicar tema oscuro en toda la app",
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white60 : Colors.grey,
-                          ),
-                        ),
-                        value: _isDarkMode,
-                        onChanged: (val) async {
-                          setModalState(() {
-                            _isDarkMode = val;
-                          });
-
-                          setState(() {
-                            _isDarkMode = val;
-                          });
-
-                          await ThemeService.setDarkMode(val);
-                        },
-                      ),
-
-                      SwitchListTile(
-                        activeThumbColor: const Color(0xFF22C55E),
-                        title: Text(
-                          "Perfil Privado",
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          "Ocultar información personal del perfil",
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white60 : Colors.grey,
-                          ),
-                        ),
-                        value: _isPrivateProfile,
-                        onChanged: (val) async {
-                          setModalState(() {
-                            _isPrivateProfile = val;
-                          });
-
-                          setState(() {
-                            _isPrivateProfile = val;
-                          });
-
-                          await _savePrivateProfile(val);
-                        },
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      Divider(
-                        color:
-                            _isDarkMode ? Colors.white12 : Colors.grey.shade300,
-                      ),
-
-                      ListTile(
-                        leading: const Icon(
-                          Icons.phone_android,
-                          color: Color(0xFF22C55E),
-                        ),
-                        title: Text(
-                          'Cambiar número de teléfono',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Actualizar teléfono visible en el perfil',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white60 : Colors.grey,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showChangePhoneDialog();
-                        },
-                      ),
-
-                      ListTile(
-                        leading: const Icon(
-                          Icons.email_outlined,
-                          color: Color(0xFF2563EB),
-                        ),
-                        title: Text(
-                          'Cambiar correo',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Próximamente con verificación',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white60 : Colors.grey,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showChangeEmailDialog();
-                        },
-                      ),
-
-                      ListTile(
-                        leading: const Icon(
-                          Icons.lock_outline,
-                          color: Colors.orange,
-                        ),
-                        title: Text(
-                          'Cambiar contraseña',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Próximamente conectado al servidor',
-                          style: TextStyle(
-                            color: _isDarkMode ? Colors.white60 : Colors.grey,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showChangePasswordDialog();
-                        },
-                      ),
-
-                      Divider(
-                        color:
-                            _isDarkMode ? Colors.white12 : Colors.grey.shade300,
-                      ),
-
-                      ListTile(
-                        leading: const Icon(Icons.logout, color: Colors.red),
-                        title: const Text(
-                          "Cerrar sesión",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _confirmLogout();
-                        },
-                      ),
-                    ],
-                  ),
+  Widget _group(AuthPalette palette, String? title, List<Widget> tiles) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 8),
+              child: Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: palette.muted,
                 ),
               ),
-            );
-          },
-        );
-      },
+            ),
+          // Material (no Container) para que se vea el efecto al tocar.
+          Material(
+            color: palette.card,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Brand.radiusLg),
+              side: BorderSide(color: palette.cardBorder),
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  if (i > 0)
+                    Divider(height: 1, indent: 60, color: palette.cardBorder),
+                  tiles[i],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final bool comingSoon;
+  final bool danger;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+    this.trailing,
+    this.comingSoon = false,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    final color =
+        danger ? Brand.danger : (comingSoon ? palette.muted : palette.title);
+
+    return ListTile(
+      enabled: !comingSoon,
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: (danger ? Brand.danger : Brand.blue).withValues(
+            alpha: comingSoon ? 0.05 : 0.10,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          icon,
+          size: 19,
+          color:
+              danger ? Brand.danger : (comingSoon ? palette.muted : Brand.blue),
+        ),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontFamily: Brand.displayFont,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+      subtitle:
+          subtitle == null
+              ? null
+              : Text(
+                subtitle!,
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 12.5,
+                  color: palette.muted,
+                ),
+              ),
+      trailing:
+          comingSoon
+              ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: palette.fieldFill,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: palette.cardBorder),
+                ),
+                child: Text(
+                  'Pronto',
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.muted,
+                  ),
+                ),
+              )
+              : trailing ??
+                  (onTap == null || danger
+                      ? null
+                      : Icon(
+                        PhosphorIconsRegular.caretRight,
+                        size: 18,
+                        color: palette.muted,
+                      )),
     );
   }
 }
 
 // =====================================================
-// TAB DE PUBLICACIONES DEL USUARIO
+// PESTAÑA: MIS PUBLICACIONES
 // =====================================================
 class UserPublicationsTab extends StatefulWidget {
   const UserPublicationsTab({super.key});
@@ -755,207 +532,116 @@ class UserPublicationsTab extends StatefulWidget {
   State<UserPublicationsTab> createState() => _UserPublicationsTabState();
 }
 
-class _UserPublicationsTabState extends State<UserPublicationsTab> {
-  bool isLoading = true;
+class _UserPublicationsTabState extends State<UserPublicationsTab>
+    with AutomaticKeepAliveClientMixin {
+  final PublicationApiService _api = PublicationApiService();
 
-  final PublicationApiService _publicationApiService = PublicationApiService();
+  bool _isLoading = true;
+  bool _hasError = false;
+  List<PublicationModel> _posts = [];
 
-  String currentUserName = '';
-  List<PublicationModel> userPosts = [];
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _loadUserPublications();
+    _load();
   }
 
-  Future<void> _loadUserPublications() async {
+  Future<void> _load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final posts = await _api.getPublications(mine: true, limit: 50);
+      if (!mounted) return;
+      setState(() {
+        // Por si el servidor aún no conoce el filtro "mine".
+        _posts = posts.where((post) => post.isMine).toList();
+        _isLoading = false;
+        _hasError = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
+  }
 
-      final userJson = prefs.getString('usuario_actual');
+  Future<void> _delete(PublicationModel post) async {
+    final index = _posts.indexOf(post);
+    setState(() => _posts.remove(post));
 
-      String userName = '';
-      String userEmail = '';
-
-      if (userJson != null && userJson.isNotEmpty) {
-        final userData = jsonDecode(userJson);
-
-        final firstName = userData['firstName']?.toString() ?? '';
-        final lastName = userData['lastName']?.toString() ?? '';
-        final fullName = '$firstName $lastName'.trim();
-
-        userEmail = userData['email']?.toString() ?? '';
-
-        if (fullName.isNotEmpty) {
-          userName = fullName;
-        } else if (userEmail.isNotEmpty) {
-          userName = userEmail;
-        }
+    try {
+      await _api.deletePublication(post.id);
+      if (mounted) {
+        showAuthMessage(
+          context,
+          'Publicación eliminada',
+          type: AuthMessageType.info,
+        );
       }
-
-      final publications = await _publicationApiService.getPublications();
-
-      final filtered =
-          publications.where((post) {
-            final postUserName = post.userName.trim().toLowerCase();
-            final currentName = userName.trim().toLowerCase();
-            final currentEmail = userEmail.trim().toLowerCase();
-
-            return postUserName == currentName || postUserName == currentEmail;
-          }).toList();
-
+    } catch (_) {
       if (!mounted) return;
-
-      setState(() {
-        currentUserName = userName;
-        userPosts = filtered;
-        isLoading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cargar tus publicaciones: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() => _posts.insert(index.clamp(0, _posts.length), post));
+      showAuthMessage(context, 'No se pudo eliminar la publicación.');
     }
   }
 
-  Future<void> _deletePublication(PublicationModel post) async {
-    try {
-      await _publicationApiService.deletePublication(post.id);
-
-      if (!mounted) return;
-
-      setState(() {
-        userPosts.removeWhere((item) => item.id == post.id);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Publicación eliminada correctamente'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo eliminar la publicación: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+  void _replace(PublicationModel updated) {
+    final index = _posts.indexWhere((p) => p.id == updated.id);
+    if (index != -1) _posts[index] = updated;
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    super.build(context);
 
-    final bgColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
+    if (_isLoading) return const _TabLoading();
 
-    final textColor = isDarkMode ? Colors.white : Colors.black87;
-
-    final subtitleColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
-
-    final iconColor = isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300;
-
-    final bottomSpace = ResponsiveHelper.appBottomNavSpace(context);
-
-    if (isLoading) {
-      return Container(
-        color: bgColor,
-        child: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF22C55E)),
-        ),
-      );
-    }
-
-    if (userPosts.isEmpty) {
-      return Container(
-        color: bgColor,
-        child: RefreshIndicator(
-          color: const Color(0xFF22C55E),
-          backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          onRefresh: _loadUserPublications,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(35, 0, 35, bottomSpace),
-            children: [
-              SizedBox(height: MediaQuery.of(context).size.height * 0.20),
-
-              Icon(Icons.article_outlined, size: 70, color: iconColor),
-
-              const SizedBox(height: 16),
-
-              Text(
-                'Aún no tienes publicaciones',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
+    return RefreshIndicator(
+      color: Brand.blue,
+      onRefresh: _load,
+      child:
+          _posts.isEmpty
+              ? _TabMessage(
+                icon:
+                    _hasError
+                        ? PhosphorIconsRegular.cloudSlash
+                        : PhosphorIconsRegular.newspaper,
+                title:
+                    _hasError
+                        ? 'No se pudieron cargar'
+                        : 'Aún no has publicado',
+                subtitle:
+                    _hasError
+                        ? 'Desliza hacia abajo para reintentar.'
+                        : 'Comparte un logro, un proyecto o una oportunidad '
+                            'desde el botón + de abajo.',
+              )
+              : ListView.builder(
+                padding: EdgeInsets.only(
+                  top: 8,
+                  bottom: ResponsiveHelper.appBottomNavSpace(context),
                 ),
+                itemCount: _posts.length,
+                itemBuilder: (context, index) {
+                  final post = _posts[index];
+                  return PublicationCard(
+                    key: ValueKey(post.id),
+                    post: post,
+                    index: index,
+                    onDelete: () => _delete(post),
+                    onChanged: _replace,
+                  );
+                },
               ),
-
-              const SizedBox(height: 8),
-
-              Text(
-                'Cuando publiques algo aparecerá aquí.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: subtitleColor,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      color: bgColor,
-      child: RefreshIndicator(
-        color: const Color(0xFF22C55E),
-        backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        onRefresh: _loadUserPublications,
-        child: ListView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(0, 12, 0, bottomSpace),
-          itemCount: userPosts.length,
-          itemBuilder: (context, index) {
-            final post = userPosts[index];
-
-            return PublicationCard(
-              post: post,
-              onDelete: () {
-                _deletePublication(post);
-              },
-              onSavedChanged: () {
-                setState(() {});
-              },
-            );
-          },
-        ),
-      ),
     );
   }
 }
 
 // =====================================================
-// TAB DE PUBLICACIONES GUARDADAS
+// PESTAÑA: GUARDADAS
 // =====================================================
 class SavedPublicationsTab extends StatefulWidget {
   const SavedPublicationsTab({super.key});
@@ -965,134 +651,129 @@ class SavedPublicationsTab extends StatefulWidget {
 }
 
 class _SavedPublicationsTabState extends State<SavedPublicationsTab> {
-  bool isLoading = true;
-
-  List<PublicationModel> savedPosts = [];
+  bool _isLoading = true;
+  List<PublicationModel> _posts = [];
 
   @override
   void initState() {
     super.initState();
-    _loadSavedPublications();
+    _load();
   }
 
-  Future<void> _loadSavedPublications() async {
-    final data = await SavedPublicationService.getSavedPublications();
-
+  Future<void> _load() async {
+    final posts = await SavedPublicationService.getSavedPublications();
     if (!mounted) return;
-
     setState(() {
-      savedPosts = data;
-      isLoading = false;
+      _posts = posts;
+      _isLoading = false;
     });
-  }
-
-  Future<void> _removeSavedPublication(PublicationModel post) async {
-    await SavedPublicationService.removeSavedPublication(post.id);
-
-    await _loadSavedPublications();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Se eliminó de guardados'),
-        backgroundColor: Color(0xFF22C55E),
-        duration: Duration(milliseconds: 900),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    if (_isLoading) return const _TabLoading();
 
-    final bgColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
-
-    final textColor = isDarkMode ? Colors.white : Colors.black87;
-
-    final subtitleColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
-
-    final iconColor = isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300;
-
-    final bottomSpace = ResponsiveHelper.appBottomNavSpace(context);
-
-    if (isLoading) {
-      return Container(
-        color: bgColor,
-        child: const Center(
-          child: CircularProgressIndicator(color: Color(0xFF22C55E)),
-        ),
-      );
-    }
-
-    if (savedPosts.isEmpty) {
-      return Container(
-        color: bgColor,
-        child: RefreshIndicator(
-          color: const Color(0xFF22C55E),
-          backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          onRefresh: _loadSavedPublications,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(35, 0, 35, bottomSpace),
-            children: [
-              SizedBox(height: MediaQuery.of(context).size.height * 0.20),
-
-              Icon(Icons.bookmark_border, size: 70, color: iconColor),
-
-              const SizedBox(height: 16),
-
-              Text(
-                'No tienes publicaciones guardadas',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
+    return RefreshIndicator(
+      color: Brand.blue,
+      onRefresh: _load,
+      child:
+          _posts.isEmpty
+              ? const _TabMessage(
+                icon: PhosphorIconsRegular.bookmarkSimple,
+                title: 'Nada guardado todavía',
+                subtitle:
+                    'Toca el ícono de guardar en una publicación para '
+                    'encontrarla aquí después.',
+              )
+              : ListView.builder(
+                padding: EdgeInsets.only(
+                  top: 8,
+                  bottom: ResponsiveHelper.appBottomNavSpace(context),
                 ),
+                itemCount: _posts.length,
+                itemBuilder: (context, index) {
+                  final post = _posts[index];
+                  // Sin onDelete: aquí solo se puede quitar de guardados
+                  // (con el ícono), no borrar la publicación.
+                  return PublicationCard(
+                    key: ValueKey(post.id),
+                    post: post,
+                    index: index,
+                    onSavedChanged: _load,
+                  );
+                },
               ),
+    );
+  }
+}
 
-              const SizedBox(height: 8),
+// =====================================================
+// ESTADOS DE LAS PESTAÑAS
+// =====================================================
+class _TabLoading extends StatelessWidget {
+  const _TabLoading();
 
-              Text(
-                'Cuando guardes una publicación aparecerá aquí.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: subtitleColor,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-            ],
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: CircularProgressIndicator(color: Brand.blue, strokeWidth: 2.5),
+    );
+  }
+}
+
+class _TabMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _TabMessage({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    // ListView para que el "deslizar para actualizar" funcione.
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(40, 48, 40, 120),
+      children: [
+        Center(
+          child: Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: Brand.blue.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 30, color: Brand.blue),
           ),
         ),
-      );
-    }
-
-    return Container(
-      color: bgColor,
-      child: RefreshIndicator(
-        color: const Color(0xFF22C55E),
-        backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        onRefresh: _loadSavedPublications,
-        child: ListView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(0, 12, 0, bottomSpace),
-          itemCount: savedPosts.length,
-          itemBuilder: (context, index) {
-            final post = savedPosts[index];
-
-            return PublicationCard(
-              post: post,
-              onDelete: () {
-                _removeSavedPublication(post);
-              },
-              onSavedChanged: _loadSavedPublications,
-            );
-          },
+        const SizedBox(height: 16),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: palette.title,
+          ),
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 14,
+            height: 1.4,
+            color: palette.body,
+          ),
+        ),
+      ],
     );
   }
 }

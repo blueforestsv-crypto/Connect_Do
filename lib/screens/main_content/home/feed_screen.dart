@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
 import 'package:connect_do/services/notification_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
-import 'package:connect_do/widgets/publication_card.dart';
+import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/publication_card.dart';
 
 class FeedScreen extends StatefulWidget {
   final ScrollController scrollController;
@@ -17,478 +22,756 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => FeedScreenState();
 }
 
+/// Filtros por tipo; el filtrado lo hace el servidor.
+const List<({String? type, String label, IconData icon})> _filters = [
+  (type: null, label: 'Todo', icon: PhosphorIconsRegular.squaresFour),
+  (type: 'job', label: 'Empleos', icon: PhosphorIconsRegular.briefcase),
+  (type: 'internship', label: 'Pasantías', icon: PhosphorIconsRegular.student),
+  (
+    type: 'social_service',
+    label: 'Servicio social',
+    icon: PhosphorIconsRegular.handHeart,
+  ),
+  (type: 'freelance', label: 'Freelance', icon: PhosphorIconsRegular.laptop),
+  (
+    type: 'announcement',
+    label: 'Convocatorias',
+    icon: PhosphorIconsRegular.megaphone,
+  ),
+  (type: 'general', label: 'Posts', icon: PhosphorIconsRegular.newspaper),
+];
+
 class FeedScreenState extends State<FeedScreen> {
+  static const int _pageSize = 10;
+  static const String _hiddenKey = 'feed_publicaciones_ocultas';
+
   final TextEditingController _searchController = TextEditingController();
-  final PublicationApiService _publicationApiService = PublicationApiService();
+  final PublicationApiService _api = PublicationApiService();
+  Timer? _searchDebounce;
 
-  List<PublicationModel> posts = [];
+  List<PublicationModel> _posts = [];
+  Set<String> _hiddenIds = {};
 
-  bool isLoading = true;
-  bool isLoadingMore = false;
-  bool hasMore = true;
+  bool _isLoading = true;
+  String? _error;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
 
-  int unreadNotificationsCount = 0;
+  /// Evita que una respuesta vieja pise una nueva al cambiar de filtro.
+  int _requestId = 0;
 
+  String? _type;
   String _searchQuery = '';
+  int _unreadNotifications = 0;
 
-  bool get hasUnreadNotifications => unreadNotificationsCount > 0;
+  List<PublicationModel> get _visiblePosts {
+    final posts = _posts.where((post) => !_hiddenIds.contains(post.id));
 
-  List<PublicationModel> get filteredPosts {
-    if (_searchQuery.isEmpty) {
-      return posts;
-    }
+    if (_searchQuery.isEmpty) return posts.toList();
 
     return posts.where((post) {
-      final userName = post.userName.toLowerCase();
-      final title = post.title.toLowerCase();
-      final description = post.description.toLowerCase();
-      final fileName = (post.fileName ?? '').toLowerCase();
-      final type = post.type.toLowerCase();
-      final location = (post.location ?? '').toLowerCase();
-
-      return userName.contains(_searchQuery) ||
-          title.contains(_searchQuery) ||
-          description.contains(_searchQuery) ||
-          fileName.contains(_searchQuery) ||
-          type.contains(_searchQuery) ||
-          location.contains(_searchQuery);
+      return [
+        post.userName,
+        post.title,
+        post.description,
+        post.typeLabel,
+        post.location ?? '',
+      ].any((field) => field.toLowerCase().contains(_searchQuery));
     }).toList();
-  }
-
-  Future<void> refreshFeed() async {
-    await _loadPublications();
-    await _loadUnreadNotificationsCount();
   }
 
   @override
   void initState() {
     super.initState();
-
-    _searchController.addListener(_onSearchChanged);
-
-    _loadPublications();
-    _loadUnreadNotificationsCount();
-
-    widget.scrollController.addListener(() {
-      if (widget.scrollController.position.pixels >=
-              widget.scrollController.position.maxScrollExtent - 200 &&
-          !isLoadingMore &&
-          hasMore &&
-          _searchQuery.isEmpty) {
-        _loadMorePosts();
-      }
-    });
+    widget.scrollController.addListener(_onScroll);
+    _loadHidden().then((_) => _loadFirstPage());
+    _loadUnreadNotifications();
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
+    widget.scrollController.removeListener(_onScroll);
     _searchController.dispose();
-
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
-  void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text.trim().toLowerCase();
-    });
+  /// Lo llama el Home al tocar la pestaña de inicio.
+  Future<void> refreshFeed() async {
+    await Future.wait([_loadFirstPage(), _loadUnreadNotifications()]);
   }
 
   // ===============================
-  // CARGAR NOTIFICACIONES NO LEÍDAS
+  // CARGA DE DATOS
   // ===============================
-  Future<void> _loadUnreadNotificationsCount() async {
-    final notifications = await NotificationService.getNotifications();
-
-    if (!mounted) return;
-
-    setState(() {
-      unreadNotificationsCount =
-          notifications.where((notification) => !notification.isRead).length;
-    });
+  Future<void> _loadHidden() async {
+    final prefs = await SharedPreferences.getInstance();
+    _hiddenIds = (prefs.getStringList(_hiddenKey) ?? const []).toSet();
   }
 
-  // ===============================
-  // CARGAR PUBLICACIONES DESDE API
-  // ===============================
-  Future<void> _loadPublications() async {
+  Future<void> _loadFirstPage({bool showSkeleton = false}) async {
+    final requestId = ++_requestId;
+
+    setState(() {
+      if (showSkeleton || _posts.isEmpty) _isLoading = true;
+      _error = null;
+    });
+
     try {
-      final publications = await _publicationApiService.getPublications();
-
-      if (!mounted) return;
+      final page = await _api.getPublications(type: _type, limit: _pageSize);
+      if (!mounted || requestId != _requestId) return;
 
       setState(() {
-        posts = publications;
-        isLoading = false;
-        hasMore = false;
+        _posts = page;
+        _hasMore = page.length == _pageSize;
+        _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
-
+      if (!mounted || requestId != _requestId) return;
       setState(() {
-        isLoading = false;
+        _isLoading = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cargar publicaciones: $error'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _isLoading) return;
+
+    final requestId = _requestId;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final page = await _api.getPublications(
+        type: _type,
+        limit: _pageSize,
+        offset: _posts.length,
       );
+      if (!mounted || requestId != _requestId) return;
+
+      final knownIds = _posts.map((p) => p.id).toSet();
+      setState(() {
+        _posts.addAll(page.where((p) => !knownIds.contains(p.id)));
+        _hasMore = page.length == _pageSize;
+      });
+    } catch (_) {
+      // Se reintenta al seguir desplazándose.
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  Future<void> _loadUnreadNotifications() async {
+    final unread = await NotificationService.getUnreadCount();
+    if (mounted) setState(() => _unreadNotifications = unread);
+  }
+
+  void _onScroll() {
+    final position = widget.scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 400 &&
+        _searchQuery.isEmpty) {
+      _loadMore();
     }
   }
 
   // ===============================
-  // REFRESH
+  // ACCIONES
   // ===============================
-  Future<void> _refreshFeed() async {
+  void _selectType(String? type) {
+    if (type == _type) return;
     setState(() {
-      isLoading = true;
+      _type = type;
+      _posts = [];
+      _hasMore = true;
     });
+    _loadFirstPage(showSkeleton: true);
+  }
 
-    await _loadPublications();
-    await _loadUnreadNotificationsCount();
-
-    if (!mounted) return;
-
-    setState(() {
-      hasMore = false;
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() => _searchQuery = value.trim().toLowerCase());
     });
   }
 
-  // ===============================
-  // ELIMINAR PUBLICACIÓN
-  // ===============================
-  Future<void> _deletePublication(PublicationModel post) async {
-    // Por ahora lo eliminamos visualmente.
-    // Luego conectamos esto con DELETE /publications/{id}.
-    setState(() {
-      posts.removeWhere((item) => item.id == post.id);
-    });
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Publicación eliminada localmente'),
-        backgroundColor: Colors.red,
-        duration: Duration(seconds: 2),
-      ),
-    );
+  void _replacePost(PublicationModel updated) {
+    final index = _posts.indexWhere((p) => p.id == updated.id);
+    if (index != -1) _posts[index] = updated;
   }
 
-  // ===============================
-  // PAGINACIÓN PLACEHOLDER
-  // ===============================
-  Future<void> _loadMorePosts() async {
-    if (isLoadingMore) return;
+  Future<void> _deletePost(PublicationModel post) async {
+    final index = _posts.indexOf(post);
+    setState(() => _posts.remove(post));
 
-    setState(() {
-      isLoadingMore = true;
-    });
-
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    if (!mounted) return;
-
-    setState(() {
-      isLoadingMore = false;
-      hasMore = false;
-    });
+    try {
+      await _api.deletePublication(post.id);
+      if (mounted) {
+        showAuthMessage(
+          context,
+          'Publicación eliminada',
+          type: AuthMessageType.info,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _posts.insert(index.clamp(0, _posts.length), post));
+      showAuthMessage(context, 'No se pudo eliminar la publicación.');
+    }
   }
 
-  // ===============================
-  // ABRIR NOTIFICACIONES
-  // ===============================
+  Future<void> _hidePost(PublicationModel post) async {
+    setState(() => _hiddenIds.add(post.id));
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenKey, _hiddenIds.toList());
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Brand.radiusMd),
+          ),
+          backgroundColor: const Color(0xFF1E293B),
+          content: const Text('Publicación ocultada'),
+          action: SnackBarAction(
+            label: 'Deshacer',
+            textColor: Brand.green,
+            onPressed: () async {
+              setState(() => _hiddenIds.remove(post.id));
+              await prefs.setStringList(_hiddenKey, _hiddenIds.toList());
+            },
+          ),
+        ),
+      );
+  }
+
   Future<void> _openNotifications() async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const NotificationsScreen()),
     );
-
-    await _loadUnreadNotificationsCount();
+    await _loadUnreadNotifications();
   }
 
   // ===============================
-  // BUSCADOR
+  // UI
   // ===============================
-  Widget _buildSearchBar({
-    required bool isDarkMode,
-    required Color inputColor,
-    required Color textColor,
-    required Color hintColor,
-  }) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: inputColor,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDarkMode ? Colors.white10 : Colors.grey.shade200,
-        ),
-      ),
-      child: TextField(
-        controller: _searchController,
-        style: TextStyle(color: textColor, fontSize: 14),
-        cursorColor: const Color(0xFF22C55E),
-        decoration: InputDecoration(
-          hintText: 'Buscar publicaciones...',
-          hintStyle: TextStyle(fontSize: 14, color: hintColor),
-          prefixIcon: Icon(
-            PhosphorIconsRegular.magnifyingGlass,
-            color: const Color(0xFF2563EB),
-            size: 20,
-          ),
-          suffixIcon:
-              _searchQuery.isNotEmpty
-                  ? IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      color:
-                          isDarkMode
-                              ? Colors.grey.shade400
-                              : Colors.grey.shade600,
-                      size: 18,
-                    ),
-                    onPressed: () {
-                      _searchController.clear();
-                    },
-                  )
-                  : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    final Color bgColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
-
-    final Color searchBgColor =
-        isDarkMode ? const Color(0xFF1E1E1E) : Colors.white;
-
-    final Color searchTextColor = isDarkMode ? Colors.white : Colors.black87;
-
-    final Color hintColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
-
-    final Color emptyTextColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey;
-
-    final postsToShow = filteredPosts;
+    final palette = AuthPalette.of(context);
     final bottomSpace = ResponsiveHelper.appBottomNavSpace(context);
+    final posts = _visiblePosts;
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(115),
-        child: Container(
-          padding: const EdgeInsets.only(
-            top: 55,
-            left: 15,
-            right: 5,
-            bottom: 10,
-          ),
-          color: const Color(0xFF2563EB),
-          child: Row(
-            children: [
-              // ==========================
-              // LOGO DE LA MARCA
-              // ==========================
-              Container(
-                height: 40,
-                width: 40,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Image.asset(
-                  'assets/images/Connet Do.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-
-              const SizedBox(width: 10),
-
-              // ==========================
-              // BUSCADOR
-              // ==========================
-              Expanded(
-                child: _buildSearchBar(
-                  isDarkMode: isDarkMode,
-                  inputColor: searchBgColor,
-                  textColor: searchTextColor,
-                  hintColor: hintColor,
-                ),
-              ),
-
-              const SizedBox(width: 5),
-
-              // ==========================
-              // NOTIFICACIONES CON BADGE
-              // ==========================
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      hasUnreadNotifications
-                          ? PhosphorIconsFill.bellSimple
-                          : PhosphorIconsRegular.bellSimple,
-                      color:
-                          hasUnreadNotifications
-                              ? const Color(0xFF22C55E)
-                              : Colors.white,
-                      size: 28,
-                    ),
-                    onPressed: _openNotifications,
+      backgroundColor: palette.background,
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: Brand.blue,
+          backgroundColor: palette.card,
+          edgeOffset: 150,
+          onRefresh: refreshFeed,
+          child: CustomScrollView(
+            controller: widget.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildAppBar(palette),
+              if (_isLoading)
+                SliverList.builder(
+                  itemCount: 3,
+                  itemBuilder: (_, __) => const _SkeletonCard(),
+                )
+              else if (_error != null && _posts.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _FeedMessage(
+                    icon: PhosphorIconsRegular.cloudSlash,
+                    title: 'No pudimos cargar el inicio',
+                    subtitle: 'Revisa tu conexión e inténtalo de nuevo.',
+                    actionLabel: 'Reintentar',
+                    onAction: () => _loadFirstPage(showSkeleton: true),
                   ),
+                )
+              else if (posts.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child:
+                      _searchQuery.isNotEmpty
+                          ? const _FeedMessage(
+                            icon: PhosphorIconsRegular.magnifyingGlass,
+                            title: 'Sin resultados',
+                            subtitle: 'Prueba con otra palabra.',
+                          )
+                          : _FeedMessage(
+                            icon: PhosphorIconsRegular.newspaper,
+                            title:
+                                _type == null
+                                    ? 'Todavía no hay publicaciones'
+                                    : 'Nada en esta categoría por ahora',
+                            subtitle:
+                                'Cuando tus contactos o empresas publiquen, '
+                                'lo verás aquí.',
+                          ),
+                )
+              else
+                SliverList.builder(
+                  itemCount: posts.length,
+                  itemBuilder: (context, index) {
+                    final post = posts[index];
 
-                  if (hasUnreadNotifications)
-                    Positioned(
-                      right: 5,
-                      top: 5,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape:
-                              unreadNotificationsCount > 9
-                                  ? BoxShape.rectangle
-                                  : BoxShape.circle,
-                          borderRadius:
-                              unreadNotificationsCount > 9
-                                  ? BorderRadius.circular(20)
-                                  : null,
-                          border: Border.all(
-                            color: const Color(0xFF2563EB),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            unreadNotificationsCount > 9
-                                ? '9+'
-                                : unreadNotificationsCount.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                    return PublicationCard(
+                      key: ValueKey(post.id),
+                      post: post,
+                      index: index,
+                      onDelete: () => _deletePost(post),
+                      onHide: () => _hidePost(post),
+                      onChanged: _replacePost,
+                    );
+                  },
+                ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 8, bottom: bottomSpace),
+                  child:
+                      _isLoadingMore
+                          ? const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Brand.blue,
+                                strokeWidth: 2.5,
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                          )
+                          : (!_hasMore && posts.length > 3)
+                          ? Center(
+                            child: Text(
+                              'Estás al día',
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 13,
+                                color: palette.muted,
+                              ),
+                            ),
+                          )
+                          : const SizedBox.shrink(),
+                ),
               ),
             ],
           ),
         ),
       ),
-      body: RefreshIndicator(
-        color: const Color(0xFF10B970),
-        backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        onRefresh: _refreshFeed,
-        child:
-            isLoading
-                ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: bottomSpace),
-                  children: const [
-                    SizedBox(height: 220),
-                    Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF10B970),
-                      ),
-                    ),
-                  ],
-                )
-                : posts.isEmpty
-                ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: bottomSpace),
-                  children: [
-                    const SizedBox(height: 200),
-                    Center(
-                      child: Text(
-                        'No hay publicaciones todavía',
-                        style: TextStyle(fontSize: 16, color: emptyTextColor),
-                      ),
-                    ),
-                  ],
-                )
-                : postsToShow.isEmpty
-                ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: bottomSpace),
-                  children: [
-                    const SizedBox(height: 200),
-                    Icon(
-                      Icons.search_off,
-                      size: 60,
-                      color:
-                          isDarkMode
-                              ? Colors.grey.shade700
-                              : Colors.grey.shade300,
-                    ),
-                    const SizedBox(height: 14),
-                    Center(
-                      child: Text(
-                        'No encontramos publicaciones',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: emptyTextColor,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        'Prueba con otro nombre o palabra clave.',
-                        style: TextStyle(fontSize: 13, color: emptyTextColor),
-                      ),
-                    ),
-                  ],
-                )
-                : ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  controller: widget.scrollController,
-                  padding: EdgeInsets.only(bottom: bottomSpace),
-                  itemCount: postsToShow.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == postsToShow.length) {
-                      return isLoadingMore && _searchQuery.isEmpty
-                          ? const Padding(
-                            padding: EdgeInsets.all(20),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: Color(0xFF10B970),
-                              ),
-                            ),
-                          )
-                          : const SizedBox(height: 20);
-                    }
+    );
+  }
 
-                    final post = postsToShow[index];
+  Widget _buildAppBar(AuthPalette palette) {
+    return SliverAppBar(
+      floating: true,
+      snap: true,
+      automaticallyImplyLeading: false,
+      backgroundColor: palette.background,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      toolbarHeight: 60,
+      titleSpacing: 16,
+      title: Row(
+        children: [
+          Image.asset('assets/images/Connect Do-01.png', height: 26),
+          const SizedBox(width: 10),
+          Text(
+            'Inicio',
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: palette.title,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: _NotificationButton(
+            count: _unreadNotifications,
+            onTap: _openNotifications,
+          ),
+        ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(108),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: _buildSearch(palette),
+            ),
+            SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _filters.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final filter = _filters[index];
+                  return _FilterChip(
+                    label: filter.label,
+                    icon: filter.icon,
+                    selected: filter.type == _type,
+                    onTap: () => _selectType(filter.type),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
 
-                    return PublicationCard(
-                      post: post,
-                      onDelete: () {
-                        _deletePublication(post);
-                      },
-                    );
-                  },
+  Widget _buildSearch(AuthPalette palette) {
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(Brand.radiusMd),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        cursorColor: Brand.blue,
+        style: TextStyle(
+          fontFamily: Brand.displayFont,
+          fontSize: 15,
+          color: palette.title,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Buscar personas, empleos, pasantías…',
+          hintStyle: TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 14.5,
+            color: palette.muted,
+          ),
+          prefixIcon: Icon(
+            PhosphorIconsRegular.magnifyingGlass,
+            size: 20,
+            color: palette.muted,
+          ),
+          suffixIcon:
+              _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                    tooltip: 'Borrar búsqueda',
+                    icon: Icon(
+                      PhosphorIconsRegular.x,
+                      size: 18,
+                      color: palette.muted,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      _onSearchChanged('');
+                    },
+                  ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================
+// PIEZAS DEL FEED
+// =====================================================
+class _NotificationButton extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _NotificationButton({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: palette.card,
+          shape: CircleBorder(side: BorderSide(color: palette.cardBorder)),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(
+              width: 42,
+              height: 42,
+              child: Icon(
+                count > 0
+                    ? PhosphorIconsFill.bellSimple
+                    : PhosphorIconsRegular.bellSimple,
+                size: 21,
+                color: count > 0 ? Brand.blue : palette.title,
+              ),
+            ),
+          ),
+        ),
+        if (count > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 18),
+              height: 18,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Brand.danger,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: palette.background, width: 2),
+              ),
+              child: Text(
+                count > 9 ? '9+' : '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
                 ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: selected ? Brand.blue : palette.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? Brand.blue : palette.cardBorder,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : palette.body,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : palette.label,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _FeedMessage({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(40, 48, 40, 120),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Brand.blue.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 32, color: Brand.blue),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: palette.title,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 14,
+              height: 1.4,
+              color: palette.body,
+            ),
+          ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 200,
+              child: GradientButton(
+                text: actionLabel!,
+                trailingIcon: PhosphorIconsRegular.arrowClockwise,
+                onPressed: onAction,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta de carga con brillo animado.
+class _SkeletonCard extends StatefulWidget {
+  const _SkeletonCard();
+
+  @override
+  State<_SkeletonCard> createState() => _SkeletonCardState();
+}
+
+class _SkeletonCardState extends State<_SkeletonCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    Widget box(double width, double height, {double radius = 8}) {
+      return AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = _controller.value * 3 - 1;
+          return Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              gradient: LinearGradient(
+                begin: Alignment(t - 1, 0),
+                end: Alignment(t, 0),
+                colors: [
+                  palette.fieldFill,
+                  palette.cardBorder,
+                  palette.fieldFill,
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              box(44, 44, radius: 22),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  box(140, 13),
+                  const SizedBox(height: 7),
+                  box(70, 10),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          box(double.infinity, 15),
+          const SizedBox(height: 8),
+          box(220, 13),
+          const SizedBox(height: 14),
+          box(double.infinity, 160, radius: 16),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(4, (_) => box(60, 14)),
+          ),
+        ],
       ),
     );
   }

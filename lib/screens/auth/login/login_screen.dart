@@ -1,14 +1,18 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/screens/account/forgot_password_screen.dart';
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
-import 'package:connect_do/screens/auth/register/benefits_screen.dart';
+import 'package:connect_do/screens/auth/register/register_screen.dart';
 import 'package:connect_do/services/auth_service.dart';
 import 'package:connect_do/services/profile_service.dart';
-import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/auth/auth_layout.dart';
+import 'package:connect_do/widgets/form/google_sign_in_button.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,8 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   bool _isCheckingMemory = true;
-  bool _obscureText = true;
 
   String? _savedName;
   String? _savedEmail;
@@ -32,6 +36,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _showQuickLogin = false;
   bool _hasSavedUser = false;
+
+  Map<String, String> _errors = {};
 
   @override
   void initState() {
@@ -167,15 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (base64Photo.isNotEmpty) {
       try {
-        String cleanBase64 = base64Photo;
-
-        if (cleanBase64.contains(',')) {
-          cleanBase64 = cleanBase64.split(',').last;
-        }
-
-        final Uint8List bytes = base64Decode(cleanBase64);
-
-        return MemoryImage(bytes);
+        return MemoryImage(base64Decode(base64Photo.split(',').last));
       } catch (_) {
         return null;
       }
@@ -203,15 +201,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() {
         _showQuickLogin = false;
+        _userController.text = _savedEmail ?? '';
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Vuelve a iniciar sesión para conectar con el servidor.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+      showAuthMessage(
+        context,
+        'Tu sesión expiró. Escribe tu contraseña para continuar.',
+        type: AuthMessageType.info,
       );
 
       return;
@@ -224,8 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setBool('sesion_activa', true);
 
     await _syncSavedUserWithBackendProfile();
-
-    await Future.delayed(const Duration(milliseconds: 300));
 
     if (!mounted) return;
 
@@ -240,19 +234,18 @@ class _LoginScreenState extends State<LoginScreen> {
   // LOGIN MANUAL CON BACKEND
   // =====================================================
   Future<void> _handleManualLogin() async {
+    FocusScope.of(context).unfocus();
+
     final typedEmail = _userController.text.trim();
     final typedPassword = _passwordController.text.trim();
 
-    if (typedEmail.isEmpty || typedPassword.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ingresa correo y contraseña'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    final errors = <String, String>{
+      if (typedEmail.isEmpty) 'email': 'Escribe tu correo.',
+      if (typedPassword.isEmpty) 'password': 'Escribe tu contraseña.',
+    };
 
-      return;
-    }
+    setState(() => _errors = errors);
+    if (errors.isNotEmpty) return;
 
     setState(() {
       _isLoading = true;
@@ -270,441 +263,272 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
         (route) => false,
       );
-    } catch (e) {
+    } on AuthException catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo iniciar sesión: $e'),
-          backgroundColor: Colors.red,
-        ),
+      setState(() => _isLoading = false);
+      showAuthMessage(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      showAuthMessage(
+        context,
+        'No pudimos conectar con el servidor. Revisa tu internet.',
       );
     }
   }
 
   // =====================================================
-  // RECUPERAR CONTRASEÑA VISUAL
+  // RECUPERAR CONTRASEÑA
   // =====================================================
-  void _showForgotPasswordDialog() {
-    final emailController = TextEditingController(text: _userController.text);
+  Future<void> _openForgotPassword() async {
+    final email = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => ForgotPasswordScreen(initialEmail: _userController.text),
+      ),
+    );
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Al volver con la contraseña cambiada, deja el correo listo.
+    if (email != null && mounted) {
+      setState(() {
+        _showQuickLogin = false;
+        _userController.text = email;
+        _passwordController.clear();
+      });
+    }
+  }
 
-        return AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-          title: Text(
-            'Recuperar contraseña',
-            style: TextStyle(
-              color: isDark ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'Ingresa tu correo',
-              hintStyle: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey,
-              ),
-              helperText: 'Versión demo: recuperación próximamente.',
-              helperStyle: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                final email = emailController.text.trim();
-
-                if (email.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Ingresa tu correo'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Te enviaremos instrucciones cuando esta función esté disponible.',
-                    ),
-                    backgroundColor: Color(0xFF2563EB),
-                  ),
-                );
-              },
-              child: const Text('Enviar'),
-            ),
-          ],
-        );
-      },
+  void _goToRegister() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
     );
   }
 
+  // =====================================================
+  // UI
+  // =====================================================
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     if (_isCheckingMemory) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF2563EB)),
-        ),
+      return Scaffold(
+        backgroundColor: AuthPalette.of(context).background,
+        body: const Center(child: CircularProgressIndicator(color: Brand.blue)),
       );
     }
 
-    final savedImage = _getSavedUserImage();
+    final quick = _showQuickLogin && _hasSavedUser;
+    final firstName = (_savedName ?? '').split(' ').first;
 
-    final bottomPadding =
-        ResponsiveHelper.keyboard(context) +
-        ResponsiveHelper.bottomSafe(context);
-
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor:
-          isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(30, 30, 30, bottomPadding + 30),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_showQuickLogin && _hasSavedUser) ...[
-                  Text(
-                    'Bienvenido de nuevo',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: isDark ? Colors.white70 : Colors.grey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 30),
-
-                  GestureDetector(
-                    onTap: _isLoading ? null : _handleQuickLogin,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(30),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: const Color(0xFF2563EB).withValues(alpha: 0.5),
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 55,
-                            backgroundColor: const Color(0xFFE2E8F0),
-                            backgroundImage: savedImage,
-                            child:
-                                savedImage == null
-                                    ? const Icon(
-                                      Icons.person,
-                                      size: 55,
-                                      color: Color(0xFF2563EB),
-                                    )
-                                    : null,
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          Text(
-                            _savedName ?? 'Usuario',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            _savedEmail ?? '',
-                            style: TextStyle(
-                              color: isDark ? Colors.white60 : Colors.grey,
-                              fontSize: 16,
-                            ),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-
-                          const SizedBox(height: 30),
-
-                          if (_isLoading)
-                            const CircularProgressIndicator(
-                              color: Color(0xFF2563EB),
-                            )
-                          else
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF2563EB),
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'ENTRAR AHORA',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 25),
-
-                  TextButton(
-                    onPressed:
-                        _isLoading
-                            ? null
-                            : () {
-                              setState(() {
-                                _showQuickLogin = false;
-                              });
-                            },
-                    child: const Text(
-                      'Usar otra cuenta',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ] else ...[
-                  const Icon(
-                    Icons.lock_person_rounded,
-                    size: 80,
-                    color: Color(0xFF2563EB),
-                  ),
-
-                  const SizedBox(height: 40),
-
-                  _buildTextField(
-                    controller: _userController,
-                    hint: 'Correo institucional',
-                    icon: Icons.alternate_email,
-                    isDark: isDark,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  _buildTextField(
-                    controller: _passwordController,
-                    hint: 'Contraseña',
-                    icon: Icons.lock_outline,
-                    isPassword: true,
-                    isDark: isDark,
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _isLoading ? null : _showForgotPasswordDialog,
-                      child: const Text(
-                        '¿Olvidaste tu contraseña?',
-                        style: TextStyle(
-                          color: Color(0xFF2563EB),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleManualLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        disabledBackgroundColor: Colors.grey,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      child:
-                          _isLoading
-                              ? const SizedBox(
-                                height: 22,
-                                width: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                              : const Text(
-                                'Iniciar Sesión',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  if (_hasSavedUser)
-                    TextButton(
-                      onPressed:
-                          _isLoading
-                              ? null
-                              : () {
-                                setState(() {
-                                  _showQuickLogin = true;
-                                });
-                              },
-                      child: const Text(
-                        'Volver al usuario guardado',
-                        style: TextStyle(color: Color(0xFF22C55E)),
-                      ),
-                    ),
-
-                  const SizedBox(height: 10),
-
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        '¿No tienes cuenta? ',
-                        style: TextStyle(
-                          color: isDark ? Colors.white70 : Colors.black87,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed:
-                            _isLoading
-                                ? null
-                                : () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const BenefitsScreen(),
-                                    ),
-                                  );
-                                },
-                        child: const Text(
-                          'Regístrate',
-                          style: TextStyle(
-                            color: Color(0xFF22C55E),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
+    return AuthLayout(
+      title: quick ? 'Hola de nuevo, $firstName' : 'Bienvenido de nuevo',
+      subtitle: Text(
+        quick
+            ? 'Continúa donde lo dejaste.'
+            : 'Inicia sesión para ver nuevas oportunidades.',
+      ),
+      footer: AuthFooterLink(
+        question: '¿No tienes cuenta?',
+        action: 'Regístrate',
+        onTap: _isLoading || _isGoogleLoading ? null : _goToRegister,
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        switchInCurve: Curves.easeOutCubic,
+        transitionBuilder:
+            (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SizeTransition(
+                sizeFactor: animation,
+                alignment: Alignment.topCenter,
+                child: child,
+              ),
             ),
-          ),
-        ),
+        child: quick ? _buildQuickLogin() : _buildManualLogin(),
       ),
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    bool isPassword = false,
-    required bool isDark,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+  Widget _buildQuickLogin() {
+    final palette = AuthPalette.of(context);
+    final savedImage = _getSavedUserImage();
+    final firstName = (_savedName ?? 'Usuario').split(' ').first;
+
+    return Column(
+      key: const ValueKey('quick'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Brand.blue, Brand.green],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: palette.card,
+              ),
+              child: CircleAvatar(
+                radius: 44,
+                backgroundColor: palette.fieldFill,
+                backgroundImage: savedImage,
+                child:
+                    savedImage == null
+                        ? Icon(
+                          PhosphorIconsRegular.user,
+                          size: 40,
+                          color: palette.muted,
+                        )
+                        : null,
+              ),
+            ),
+          ),
         ),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: isPassword ? _obscureText : false,
-        keyboardType: keyboardType,
-        textInputAction:
-            isPassword ? TextInputAction.done : TextInputAction.next,
-        onSubmitted: (_) {
-          if (isPassword) {
-            _handleManualLogin();
-          }
-        },
-        style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-        cursorColor: const Color(0xFF22C55E),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
-          prefixIcon: Icon(icon, color: const Color(0xFF2563EB)),
-          suffixIcon:
-              isPassword
-                  ? IconButton(
-                    icon: Icon(
-                      _obscureText
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: isDark ? Colors.white70 : Colors.grey,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscureText = !_obscureText;
-                      });
-                    },
-                  )
-                  : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+        const SizedBox(height: 16),
+        Text(
+          _savedName ?? 'Usuario',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: palette.title,
+          ),
         ),
+        const SizedBox(height: 4),
+        Text(
+          _savedEmail ?? '',
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: Brand.displayFont,
+            fontSize: 14,
+            color: palette.body,
+          ),
+        ),
+        const SizedBox(height: 24),
+        GradientButton(
+          text: 'Continuar como $firstName',
+          isLoading: _isLoading,
+          onPressed: _handleQuickLogin,
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed:
+              _isLoading
+                  ? null
+                  : () => setState(() {
+                    _showQuickLogin = false;
+                    _errors = {};
+                  }),
+          icon: Icon(
+            PhosphorIconsRegular.userPlus,
+            size: 18,
+            color: palette.body,
+          ),
+          label: Text(
+            'Usar otra cuenta',
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              color: palette.body,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildManualLogin() {
+    final palette = AuthPalette.of(context);
+    final busy = _isLoading || _isGoogleLoading;
+
+    return AutofillGroup(
+      key: const ValueKey('manual'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GoogleSignInButton(
+            enabled: !_isLoading,
+            onLoadingChanged: (v) => setState(() => _isGoogleLoading = v),
+          ),
+          const AuthDivider(text: 'o con tu correo'),
+          AuthTextField(
+            controller: _userController,
+            label: 'Correo electrónico',
+            hint: 'tu.correo@gmail.com',
+            icon: PhosphorIconsRegular.envelopeSimple,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email, AutofillHints.username],
+            errorText: _errors['email'],
+            enabled: !busy,
+            onChanged: (_) {
+              if (_errors.containsKey('email')) {
+                setState(() => _errors = {..._errors}..remove('email'));
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          AuthTextField(
+            controller: _passwordController,
+            label: 'Contraseña',
+            hint: 'Tu contraseña',
+            icon: PhosphorIconsRegular.lockSimple,
+            isPassword: true,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            errorText: _errors['password'],
+            enabled: !busy,
+            onChanged: (_) {
+              if (_errors.containsKey('password')) {
+                setState(() => _errors = {..._errors}..remove('password'));
+              }
+            },
+            onSubmitted: (_) => _handleManualLogin(),
+            trailingLabel: GestureDetector(
+              onTap: busy ? null : _openForgotPassword,
+              child: const Text(
+                '¿La olvidaste?',
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Brand.blue,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          GradientButton(
+            text: 'Iniciar sesión',
+            isLoading: _isLoading,
+            onPressed: _isGoogleLoading ? null : _handleManualLogin,
+          ),
+          if (_hasSavedUser) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed:
+                  busy ? null : () => setState(() => _showQuickLogin = true),
+              child: Text(
+                'Volver a ${(_savedName ?? 'mi cuenta').split(' ').first}',
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  color: palette.body,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

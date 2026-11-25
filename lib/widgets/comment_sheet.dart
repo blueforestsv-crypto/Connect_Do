@@ -1,594 +1,701 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/comment_model.dart';
 import 'package:connect_do/models/publication_model.dart';
-import 'package:connect_do/services/comment_service.dart';
-import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/services/publication_api_service.dart';
+import 'package:connect_do/services/user_service.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/feed/user_avatar.dart';
 
+/// Panel inferior con los comentarios de una publicación (del servidor).
 class CommentSheet extends StatefulWidget {
   final PublicationModel post;
-  final bool isDarkMode;
 
-  const CommentSheet({super.key, required this.post, this.isDarkMode = false});
+  /// Se llama cada vez que cambia el total de comentarios.
+  final ValueChanged<int>? onCountChanged;
+
+  const CommentSheet({super.key, required this.post, this.onCountChanged});
 
   @override
   State<CommentSheet> createState() => _CommentSheetState();
 }
 
 class _CommentSheetState extends State<CommentSheet> {
-  final TextEditingController _commentController = TextEditingController();
+  static const int _maxLength = 1000;
 
-  List<CommentModel> comments = [];
+  final PublicationApiService _api = PublicationApiService();
+  final TextEditingController _input = TextEditingController();
+  final FocusNode _inputFocus = FocusNode();
+  final ScrollController _scroll = ScrollController();
 
-  bool isLoading = true;
-  bool isSending = false;
+  List<CommentModel> _comments = [];
+  bool _isLoading = true;
+  String? _loadError;
+  bool _isSending = false;
 
-  String currentUserId = 'local_user';
-  String currentUserName = 'Usuario';
-  String currentUserAvatar = '';
+  /// Comentario que se está editando (el texto va en el mismo campo).
+  CommentModel? _editing;
+
+  String _myName = 'Tú';
+  String _myPhoto = '';
 
   @override
   void initState() {
     super.initState();
-    _loadCurrentUserAndComments();
+    _input.addListener(() => setState(() {}));
+    _loadMe();
+    _loadComments();
   }
 
   @override
   void dispose() {
-    _commentController.dispose();
+    _input.dispose();
+    _inputFocus.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  // ===============================
-  // CARGAR USUARIO Y COMENTARIOS
-  // ===============================
-  Future<void> _loadCurrentUserAndComments() async {
-    await _loadCurrentUser();
-    await _loadComments();
-  }
-
-  Future<void> _loadCurrentUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString('usuario_actual');
-
-    if (userJson == null) return;
-
-    final userData = jsonDecode(userJson);
-
-    final email = userData['email'] ?? 'local_user';
-
-    final firstName = userData['firstName'] ?? '';
-    final lastName = userData['lastName'] ?? '';
-    final fullName = '$firstName $lastName'.trim();
-
-    String name = 'Usuario';
-
-    if (fullName.isNotEmpty) {
-      name = fullName;
-    } else if (email.toString().isNotEmpty) {
-      name = email.toString().split('@')[0];
-    }
-
-    String avatar = '';
-
-    if ((userData['profile_image_path'] ?? '').toString().isNotEmpty) {
-      avatar = userData['profile_image_path'];
-    } else if ((userData['google_photo_url'] ?? '').toString().isNotEmpty) {
-      avatar = userData['google_photo_url'];
-    }
+  Future<void> _loadMe() async {
+    final user = await UserService.getUser();
+    final name =
+        '${user['firstName'] ?? user['first_name'] ?? ''} '
+                '${user['lastName'] ?? user['last_name'] ?? ''}'
+            .trim();
+    final base64Photo = user['profile_image_base64']?.toString() ?? '';
+    final googlePhoto = user['google_photo_url']?.toString() ?? '';
 
     if (!mounted) return;
-
     setState(() {
-      currentUserId = email;
-      currentUserName = name;
-      currentUserAvatar = avatar;
+      _myName = name.isEmpty ? 'Tú' : name;
+      _myPhoto = base64Photo.isNotEmpty ? base64Photo : googlePhoto;
     });
   }
 
-  // ===============================
-  // CARGAR COMENTARIOS
-  // ===============================
   Future<void> _loadComments() async {
-    final data = await CommentService.getComments(widget.post.id);
-
-    if (!mounted) return;
-
     setState(() {
-      comments = data;
-      isLoading = false;
+      _isLoading = true;
+      _loadError = null;
     });
+
+    try {
+      final comments = await _api.getComments(widget.post.id);
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _isLoading = false;
+      });
+      widget.onCountChanged?.call(comments.length);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = error.toString();
+      });
+    }
   }
 
   // ===============================
-  // ENVIAR COMENTARIO
+  // ENVIAR / EDITAR
   // ===============================
-  Future<void> _sendComment() async {
-    final text = _commentController.text.trim();
+  Future<void> _submit() async {
+    final text = _input.text.trim();
+    if (text.isEmpty || _isSending) return;
 
-    if (text.isEmpty || isSending) return;
+    setState(() => _isSending = true);
 
-    setState(() {
-      isSending = true;
-    });
+    try {
+      if (_editing != null) {
+        final updated = await _api.updateComment(
+          widget.post.id,
+          _editing!.id,
+          text,
+        );
+        if (!mounted) return;
+        setState(() {
+          final index = _comments.indexWhere((c) => c.id == updated.id);
+          if (index != -1) _comments[index] = updated;
+          _editing = null;
+        });
+      } else {
+        final created = await _api.addComment(widget.post.id, text);
+        if (!mounted) return;
+        HapticFeedback.lightImpact();
+        setState(() => _comments.add(created));
+        widget.onCountChanged?.call(_comments.length);
+        _scrollToEnd();
+      }
+      _input.clear();
+    } catch (error) {
+      if (mounted) showAuthMessage(context, error.toString());
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
 
-    final comment = CommentModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      publicationId: widget.post.id,
-      userId: currentUserId,
-      userName: currentUserName,
-      userAvatar: currentUserAvatar,
-      text: text,
-      timeAgo: 'Ahora',
-      createdAt: DateTime.now(),
-    );
-
-    await CommentService.addComment(comment);
-
-    if (!mounted) return;
-
-    _commentController.clear();
-
-    await _loadComments();
-
-    if (!mounted) return;
-
-    setState(() {
-      isSending = false;
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
-  // ===============================
-  // OPCIONES DEL COMENTARIO
-  // ===============================
-  void _showCommentOptions(CommentModel comment) {
+  void _startEditing(CommentModel comment) {
+    setState(() => _editing = comment);
+    _input
+      ..text = comment.text
+      ..selection = TextSelection.collapsed(offset: comment.text.length);
+    _inputFocus.requestFocus();
+  }
+
+  void _cancelEditing() {
+    setState(() => _editing = null);
+    _input.clear();
+  }
+
+  Future<void> _delete(CommentModel comment) async {
+    final index = _comments.indexOf(comment);
+    setState(() => _comments.remove(comment));
+
+    try {
+      await _api.deleteComment(widget.post.id, comment.id);
+      widget.onCountChanged?.call(_comments.length);
+      if (_editing?.id == comment.id) _cancelEditing();
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _comments.insert(index.clamp(0, _comments.length), comment),
+      );
+      showAuthMessage(context, error.toString());
+    }
+  }
+
+  void _showOptions(CommentModel comment) {
+    if (!comment.isMine && !comment.canDelete) return;
+    HapticFeedback.selectionClick();
+
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor:
-          widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) {
-        return Padding(
-          padding: ResponsiveHelper.sheetPadding(context),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 12, bottom: 12),
-                  decoration: BoxDecoration(
-                    color:
-                        widget.isDarkMode ? Colors.grey[700] : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
 
-                ListTile(
-                  leading: const Icon(
-                    Icons.edit_outlined,
-                    color: Color(0xFF2563EB),
-                  ),
-                  title: Text(
-                    'Editar comentario',
-                    style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showEditCommentDialog(comment);
-                  },
-                ),
-
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: Text(
-                    'Eliminar comentario',
-                    style: TextStyle(
-                      color: widget.isDarkMode ? Colors.white : Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _deleteComment(comment);
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // EDITAR COMENTARIO
-  // ===============================
-  void _showEditCommentDialog(CommentModel comment) {
-    final TextEditingController editController = TextEditingController(
-      text: comment.text,
-    );
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Editar comentario',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: editController,
-            maxLines: null,
-            autofocus: true,
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'Escribe tu comentario',
-              hintStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.grey[500] : Colors.grey[500],
+        Widget option(
+          IconData icon,
+          String text,
+          Color color,
+          VoidCallback onTap,
+        ) {
+          return ListTile(
+            leading: Icon(icon, color: color),
+            title: Text(
+              text,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
             ),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              onTap();
+            },
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+          decoration: BoxDecoration(
+            color: palette.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(Brand.radiusLg),
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                final newText = editController.text.trim();
-
-                if (newText.isEmpty) return;
-
-                await CommentService.updateComment(
-                  commentId: comment.id,
-                  newText: newText,
-                );
-
-                if (!mounted) return;
-
-                Navigator.pop(context);
-
-                await _loadComments();
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // ELIMINAR COMENTARIO
-  // ===============================
-  Future<void> _deleteComment(CommentModel comment) async {
-    await CommentService.deleteComment(comment.id);
-
-    if (!mounted) return;
-
-    await _loadComments();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Comentario eliminado'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  // ===============================
-  // AVATAR
-  // ===============================
-  Widget _buildAvatar(String avatar) {
-    if (avatar.isEmpty) {
-      return CircleAvatar(
-        radius: 18,
-        backgroundColor:
-            widget.isDarkMode ? Colors.grey[800] : Colors.grey[200],
-        child: Icon(
-          Icons.person,
-          color: widget.isDarkMode ? Colors.grey[400] : Colors.grey,
-          size: 20,
-        ),
-      );
-    }
-
-    if (avatar.startsWith('/')) {
-      return CircleAvatar(radius: 18, backgroundImage: FileImage(File(avatar)));
-    }
-
-    return CircleAvatar(
-      radius: 18,
-      backgroundImage: NetworkImage(avatar),
-      onBackgroundImageError: (_, __) {},
-    );
-  }
-
-  // ===============================
-  // ITEM COMENTARIO
-  // ===============================
-  Widget _buildCommentItem(CommentModel comment) {
-    final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
-
-    final subtitleColor =
-        widget.isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAvatar(comment.userAvatar),
-
-          const SizedBox(width: 10),
-
-          Expanded(
-            child: InkWell(
-              onLongPress: () => _showCommentOptions(comment),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color:
-                      widget.isDarkMode
-                          ? const Color(0xFF1E1E1E)
-                          : Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            comment.userName,
-                            style: TextStyle(
-                              color: textColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-
-                        InkWell(
-                          onTap: () => _showCommentOptions(comment),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.more_horiz,
-                              color: subtitleColor,
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      comment.text,
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      comment.timeAgo,
-                      style: TextStyle(color: subtitleColor, fontSize: 11),
-                    ),
-                  ],
+                  color: palette.fieldBorder,
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
-            ),
+              if (comment.isMine)
+                option(
+                  PhosphorIconsRegular.pencilSimple,
+                  'Editar comentario',
+                  palette.title,
+                  () => _startEditing(comment),
+                ),
+              if (comment.canDelete)
+                option(
+                  PhosphorIconsRegular.trash,
+                  'Eliminar comentario',
+                  Brand.danger,
+                  () => _delete(comment),
+                ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   // ===============================
-  // INPUT DE COMENTARIO
-  // ===============================
-  Widget _buildCommentInput({
-    required Color bgColor,
-    required Color inputBgColor,
-    required Color textColor,
-    required Color hintColor,
-  }) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        10,
-        16,
-        MediaQuery.of(context).padding.bottom + 12,
-      ),
-      decoration: BoxDecoration(
-        color: bgColor,
-        border: Border(
-          top: BorderSide(
-            color: widget.isDarkMode ? Colors.white10 : Colors.grey.shade200,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: inputBgColor,
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: TextField(
-                controller: _commentController,
-                minLines: 1,
-                maxLines: 4,
-                style: TextStyle(color: textColor),
-                cursorColor: const Color(0xFF22C55E),
-                decoration: InputDecoration(
-                  hintText: 'Escribe un comentario...',
-                  hintStyle: TextStyle(color: hintColor),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 10),
-
-          CircleAvatar(
-            backgroundColor: const Color(0xFF22C55E),
-            child: IconButton(
-              icon:
-                  isSending
-                      ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                      : const Icon(Icons.send, color: Colors.white),
-              onPressed: isSending ? null : _sendComment,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ===============================
-  // BUILD
+  // UI
   // ===============================
   @override
   Widget build(BuildContext context) {
-    final bgColor = widget.isDarkMode ? const Color(0xFF121212) : Colors.white;
-
-    final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
-
-    final inputBgColor =
-        widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.grey.shade100;
-
-    final hintColor =
-        widget.isDarkMode ? Colors.grey.shade500 : Colors.grey.shade500;
-
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final palette = AuthPalette.of(context);
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
 
     return AnimatedPadding(
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: keyboardHeight),
+      padding: EdgeInsets.only(bottom: keyboard),
       child: Container(
-        height: MediaQuery.of(context).size.height * 0.85,
+        height: MediaQuery.of(context).size.height * 0.82,
         decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
+          ),
         ),
         child: Column(
           children: [
             const SizedBox(height: 10),
-
             Container(
-              width: 42,
+              width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: widget.isDarkMode ? Colors.grey[700] : Colors.grey[300],
-                borderRadius: BorderRadius.circular(20),
+                color: palette.fieldBorder,
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
-
-            const SizedBox(height: 14),
-
-            Text(
-              'Comentarios',
-              style: TextStyle(
-                color: textColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            Expanded(
-              child:
-                  isLoading
-                      ? const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF22C55E),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 12, 10),
+              child: Row(
+                children: [
+                  Text(
+                    'Comentarios',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: palette.title,
+                    ),
+                  ),
+                  if (_comments.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Brand.blue.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${_comments.length}',
+                        style: const TextStyle(
+                          fontFamily: Brand.displayFont,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Brand.blue,
                         ),
-                      )
-                      : comments.isEmpty
-                      ? Center(
-                        child: Text(
-                          'Aún no hay comentarios',
-                          style: TextStyle(
-                            color:
-                                widget.isDarkMode
-                                    ? Colors.grey.shade400
-                                    : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(PhosphorIconsRegular.x, color: palette.muted),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: palette.cardBorder),
+            Expanded(child: _buildBody(palette)),
+            _buildInput(palette),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(AuthPalette palette) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Brand.blue, strokeWidth: 2.5),
+      );
+    }
+
+    if (_loadError != null) {
+      return _CenteredMessage(
+        icon: PhosphorIconsRegular.cloudSlash,
+        title: 'No se pudieron cargar',
+        subtitle: _loadError!,
+        action: TextButton.icon(
+          onPressed: _loadComments,
+          icon: const Icon(PhosphorIconsRegular.arrowClockwise, size: 18),
+          label: const Text('Reintentar'),
+        ),
+      );
+    }
+
+    if (_comments.isEmpty) {
+      return const _CenteredMessage(
+        icon: PhosphorIconsRegular.chatTeardropText,
+        title: 'Aún no hay comentarios',
+        subtitle: 'Sé la primera persona en comentar.',
+      );
+    }
+
+    return ListView.separated(
+      controller: _scroll,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      itemCount: _comments.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      itemBuilder: (context, index) => _buildComment(_comments[index], palette),
+    );
+  }
+
+  Widget _buildComment(CommentModel comment, AuthPalette palette) {
+    final isPostAuthor =
+        widget.post.authorId.isNotEmpty &&
+        comment.authorId == widget.post.authorId;
+    final hasOptions = comment.isMine || comment.canDelete;
+
+    return GestureDetector(
+      onLongPress: hasOptions ? () => _showOptions(comment) : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          UserAvatar(
+            name: comment.authorName,
+            photo: comment.authorPhoto,
+            radius: 17,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                  decoration: BoxDecoration(
+                    color:
+                        _editing?.id == comment.id
+                            ? Brand.blue.withValues(alpha: 0.08)
+                            : palette.fieldFill,
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                      topLeft: Radius.circular(4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              comment.authorName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: palette.title,
+                              ),
+                            ),
+                          ),
+                          if (isPostAuthor) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Brand.green.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'Autor',
+                                style: TextStyle(
+                                  fontFamily: Brand.displayFont,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Brand.success,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        comment.text,
+                        style: TextStyle(
+                          fontFamily: Brand.displayFont,
+                          fontSize: 14.5,
+                          height: 1.4,
+                          color: palette.label,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6, top: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        timeAgo(comment.createdAt) +
+                            (comment.wasEdited ? ' · editado' : ''),
+                        style: TextStyle(
+                          fontFamily: Brand.displayFont,
+                          fontSize: 12,
+                          color: palette.muted,
+                        ),
+                      ),
+                      if (hasOptions) ...[
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => _showOptions(comment),
+                          child: Text(
+                            'Opciones',
+                            style: TextStyle(
+                              fontFamily: Brand.displayFont,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: palette.body,
+                            ),
                           ),
                         ),
-                      )
-                      : ListView.builder(
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        itemCount: comments.length,
-                        itemBuilder: (context, index) {
-                          return _buildCommentItem(comments[index]);
-                        },
-                      ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            _buildCommentInput(
-              bgColor: bgColor,
-              inputBgColor: inputBgColor,
-              textColor: textColor,
-              hintColor: hintColor,
+  Widget _buildInput(AuthPalette palette) {
+    final canSend = _input.text.trim().isNotEmpty && !_isSending;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        MediaQuery.of(context).padding.bottom + 10,
+      ),
+      decoration: BoxDecoration(
+        color: palette.card,
+        border: Border(top: BorderSide(color: palette.cardBorder)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_editing != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, left: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    PhosphorIconsRegular.pencilSimple,
+                    size: 15,
+                    color: Brand.blue,
+                  ),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      'Editando comentario',
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Brand.blue,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _cancelEditing,
+                    child: Text(
+                      'Cancelar',
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: palette.muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: UserAvatar(name: _myName, photo: _myPhoto, radius: 17),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: palette.fieldFill,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: palette.fieldBorder),
+                  ),
+                  child: TextField(
+                    controller: _input,
+                    focusNode: _inputFocus,
+                    minLines: 1,
+                    maxLines: 4,
+                    maxLength: _maxLength,
+                    textCapitalization: TextCapitalization.sentences,
+                    cursorColor: Brand.blue,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 15,
+                      color: palette.title,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Escribe un comentario…',
+                      hintStyle: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        color: palette.muted,
+                      ),
+                      border: InputBorder.none,
+                      counterText: '',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: canSend ? Brand.gradient : null,
+                  color: canSend ? null : palette.fieldBorder,
+                ),
+                child: IconButton(
+                  tooltip: _editing != null ? 'Guardar' : 'Enviar',
+                  onPressed: canSend ? _submit : null,
+                  icon:
+                      _isSending
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                          : Icon(
+                            _editing != null
+                                ? PhosphorIconsRegular.check
+                                : PhosphorIconsFill.paperPlaneRight,
+                            size: 19,
+                            color: canSend ? Colors.white : palette.muted,
+                          ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CenteredMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  const _CenteredMessage({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Brand.blue.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 30, color: Brand.blue),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: palette.title,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 13.5,
+                color: palette.muted,
+              ),
+            ),
+            if (action != null) ...[const SizedBox(height: 8), action!],
           ],
         ),
       ),

@@ -1,20 +1,29 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/helpers/profile_completion.dart';
 import 'package:connect_do/services/profile_service.dart';
+import 'package:connect_do/services/user_service.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/utils/academic_options.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
+import 'package:connect_do/widgets/feed/user_avatar.dart';
 
+/// Tarjeta superior del perfil: foto, nombre, estudios y avance del perfil.
 class ProfileHeader extends StatefulWidget {
-  final bool isDarkMode;
-  final VoidCallback onMenuTap;
+  /// Cambia cada vez que el perfil se edita, para volver a leer los datos.
+  final int refreshKey;
+  final VoidCallback onEditProfile;
+  final VoidCallback onOpenSettings;
 
   const ProfileHeader({
     super.key,
-    required this.isDarkMode,
-    required this.onMenuTap,
+    required this.refreshKey,
+    required this.onEditProfile,
+    required this.onOpenSettings,
   });
 
   @override
@@ -22,393 +31,397 @@ class ProfileHeader extends StatefulWidget {
 }
 
 class _ProfileHeaderState extends State<ProfileHeader> {
-  String _userName = 'Cargando...';
-  String _userCareer = '';
-  String _userEmail = '';
-  String _googlePhoto = '';
-  String _localPhotoBase64 = '';
-
-  bool _isSyncingPhoto = false;
-
   final ImagePicker _picker = ImagePicker();
+
+  Map<String, dynamic> _user = {};
+  bool _isUploadingPhoto = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _load();
   }
 
-  Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final datosJson = prefs.getString('usuario_actual');
-
-    Map<String, dynamic> userData = {};
-
-    if (datosJson != null && datosJson.isNotEmpty) {
-      try {
-        userData = jsonDecode(datosJson) as Map<String, dynamic>;
-      } catch (_) {
-        userData = {};
-      }
-    }
-
-    _setHeaderFromLocalUser(userData);
-
-    await _loadProfileFromBackendAndSyncLocalPhoto(userData);
+  @override
+  void didUpdateWidget(covariant ProfileHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) _load();
   }
 
-  void _setHeaderFromLocalUser(Map<String, dynamic> userData) {
-    final String email = userData['email']?.toString() ?? '';
-
-    final String firstName =
-        userData['firstName']?.toString() ??
-        userData['first_name']?.toString() ??
-        '';
-
-    final String lastName =
-        userData['lastName']?.toString() ??
-        userData['last_name']?.toString() ??
-        '';
-
-    String fullName = '$firstName $lastName'.trim();
-
-    if (fullName.isEmpty && email.isNotEmpty) {
-      fullName = email.split('@')[0].replaceAll('.', ' ');
-    }
-
-    final String career = userData['career']?.toString() ?? '';
-
-    final String googlePhoto =
-        userData['google_photo_url']?.toString() ??
-        userData['photoUrl']?.toString() ??
-        userData['photo_url']?.toString() ??
-        '';
-
-    final String profilePhotoBase64 =
-        userData['profile_image_base64']?.toString() ?? '';
-
-    if (!mounted) return;
-
-    setState(() {
-      _userName = fullName.isEmpty ? 'Usuario' : fullName;
-      _userCareer = career.isEmpty ? 'Sin carrera registrada' : career;
-      _userEmail = email;
-      _googlePhoto = googlePhoto;
-      _localPhotoBase64 = profilePhotoBase64;
-    });
+  Future<void> _load() async {
+    final user = await UserService.getUser();
+    if (mounted) setState(() => _user = user);
   }
 
-  Future<void> _loadProfileFromBackendAndSyncLocalPhoto(
-    Map<String, dynamic> localUserData,
-  ) async {
-    try {
-      final backendProfile = await ProfileService.getMyProfile();
+  String _str(String key) => _user[key]?.toString().trim() ?? '';
 
-      if (backendProfile == null) {
-        return;
-      }
-
-      final String backendProfileImage =
-          backendProfile['profile_image_base64']?.toString() ?? '';
-
-      final String localProfileImage =
-          localUserData['profile_image_base64']?.toString() ?? '';
-
-      final prefs = await SharedPreferences.getInstance();
-
-      final Map<String, dynamic> updatedUserData = Map<String, dynamic>.from(
-        localUserData,
-      );
-
-      if (backendProfileImage.isNotEmpty) {
-        updatedUserData['profile_image_base64'] = backendProfileImage;
-
-        await prefs.setString('usuario_actual', jsonEncode(updatedUserData));
-
-        if (!mounted) return;
-
-        setState(() {
-          _localPhotoBase64 = backendProfileImage;
-        });
-
-        return;
-      }
-
-      if (backendProfileImage.isEmpty && localProfileImage.isNotEmpty) {
-        await _syncLocalPhotoToBackend(localProfileImage);
-
-        updatedUserData['profile_image_base64'] = localProfileImage;
-
-        await prefs.setString('usuario_actual', jsonEncode(updatedUserData));
-
-        if (!mounted) return;
-
-        setState(() {
-          _localPhotoBase64 = localProfileImage;
-        });
-      }
-    } catch (_) {
-      // Si falla backend, dejamos la foto local para no romper la demo.
-    }
+  String get _name {
+    final name =
+        '${_str('firstName').isNotEmpty ? _str('firstName') : _str('first_name')} '
+                '${_str('lastName').isNotEmpty ? _str('lastName') : _str('last_name')}'
+            .trim();
+    if (name.isNotEmpty) return name;
+    final email = _str('email');
+    return email.isEmpty ? 'Usuario' : email.split('@').first;
   }
 
-  Future<void> _syncLocalPhotoToBackend(String imageBase64) async {
-    if (imageBase64.trim().isEmpty) return;
+  String get _photo {
+    final base64Photo = _str('profile_image_base64');
+    return base64Photo.isNotEmpty ? base64Photo : _str('google_photo_url');
+  }
+
+  /// "Ingenierías · UTEC" o lo que haya disponible.
+  String? get _studies {
+    final university = AcademicOptions.normalizeUniversity(_str('university'));
+    final parts = [
+      if (_str('career').isNotEmpty) _str('career'),
+      if (university != null) university,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  // ===============================
+  // CAMBIAR FOTO
+  // ===============================
+  Future<void> _changePhoto() async {
+    if (_isUploadingPhoto) return;
 
     try {
-      setState(() {
-        _isSyncingPhoto = true;
-      });
-
-      await ProfileService.updateMyProfile(profileImageBase64: imageBase64);
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _isSyncingPhoto = false;
-      });
-    }
-  }
-
-  Future<void> _changeProfilePhoto() async {
-    try {
-      final XFile? pickedImage = await _picker.pickImage(
+      final picked = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 80,
         maxWidth: 900,
       );
+      if (picked == null) return;
 
-      if (pickedImage == null) return;
+      final imageBase64 = base64Encode(await picked.readAsBytes());
 
-      final Uint8List imageBytes = await pickedImage.readAsBytes();
-
-      final String imageBase64 = base64Encode(imageBytes);
-
-      final prefs = await SharedPreferences.getInstance();
-
-      final datosJson = prefs.getString('usuario_actual');
-
-      Map<String, dynamic> userData = {};
-
-      if (datosJson != null && datosJson.isNotEmpty) {
-        try {
-          userData = jsonDecode(datosJson) as Map<String, dynamic>;
-        } catch (_) {
-          userData = {};
-        }
-      }
-
-      userData['profile_image_base64'] = imageBase64;
-      userData['profile_image_path'] = pickedImage.name;
-
-      await prefs.setString('usuario_actual', jsonEncode(userData));
-
+      // Se muestra y se guarda en el teléfono de inmediato.
+      final updated = Map<String, dynamic>.from(_user)
+        ..['profile_image_base64'] = imageBase64;
+      await UserService.saveUser(updated);
       if (!mounted) return;
-
       setState(() {
-        _localPhotoBase64 = imageBase64;
+        _user = updated;
+        _isUploadingPhoto = true;
       });
 
-      try {
-        await _syncLocalPhotoToBackend(imageBase64);
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Foto de perfil actualizada en backend'),
-            backgroundColor: Color(0xFF22C55E),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'La foto se guardó localmente, pero no se pudo subir al backend: $e',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
+      await ProfileService.updateMyProfile(profileImageBase64: imageBase64);
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al cambiar foto: $e'),
-          backgroundColor: Colors.red,
-        ),
+      showAuthMessage(
+        context,
+        'Foto de perfil actualizada',
+        type: AuthMessageType.success,
       );
+    } catch (_) {
+      if (!mounted) return;
+      showAuthMessage(
+        context,
+        'La foto se guardó en tu teléfono, pero no se pudo subir. '
+        'Inténtalo más tarde.',
+        type: AuthMessageType.info,
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
     }
   }
 
-  ImageProvider? _getProfileImage() {
-    if (_localPhotoBase64.isNotEmpty) {
-      try {
-        final Uint8List bytes = base64Decode(_localPhotoBase64);
-        return MemoryImage(bytes);
-      } catch (_) {
-        return null;
-      }
-    }
-
-    if (_googlePhoto.isNotEmpty) {
-      return NetworkImage(_googlePhoto);
-    }
-
-    return null;
-  }
-
-  String _getInitials() {
-    final cleanName = _userName.trim();
-
-    if (cleanName.isEmpty || cleanName == 'Cargando...') {
-      return 'U';
-    }
-
-    final parts =
-        cleanName.split(' ').where((part) => part.trim().isNotEmpty).toList();
-
-    if (parts.isEmpty) return 'U';
-
-    if (parts.length == 1) {
-      return parts.first[0].toUpperCase();
-    }
-
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-
+  // ===============================
+  // UI
+  // ===============================
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? imageProvider = _getProfileImage();
+    final palette = AuthPalette.of(context);
+    final percent = ProfileCompletion.percent(_user);
+    final studies = _studies;
+    final email = _str('email');
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
-      color: const Color(0xFF2563EB),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.topRight,
-            child: IconButton(
-              icon: const Icon(Icons.menu, color: Color(0xFF22C55E), size: 35),
-              onPressed: widget.onMenuTap,
-            ),
-          ),
-
           Row(
             children: [
-              GestureDetector(
-                onTap: _changeProfilePhoto,
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    CircleAvatar(
-                      radius: 42,
-                      backgroundColor: Colors.white24,
-                      backgroundImage: imageProvider,
-                      child:
-                          imageProvider == null
-                              ? Text(
-                                _getInitials(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                              : null,
-                    ),
-
-                    Container(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF22C55E),
-                        shape: BoxShape.circle,
-                      ),
-                      padding: const EdgeInsets.all(6),
-                      child:
-                          _isSyncingPhoto
-                              ? const SizedBox(
-                                width: 15,
-                                height: 15,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                              : const Icon(
-                                Icons.camera_alt,
-                                size: 15,
-                                color: Colors.white,
-                              ),
-                    ),
-                  ],
+              Text(
+                'Perfil',
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                  color: palette.title,
                 ),
               ),
-
-              const SizedBox(width: 20),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _userName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      _userCareer,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                    if (_userEmail.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _userEmail,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      _isSyncingPhoto
-                          ? 'Sincronizando foto...'
-                          : 'Toca la foto para cambiarla',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+              const Spacer(),
+              _CircleIconButton(
+                icon: PhosphorIconsRegular.gearSix,
+                tooltip: 'Configuración',
+                onTap: widget.onOpenSettings,
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: palette.card,
+              borderRadius: BorderRadius.circular(Brand.radiusLg),
+              border: Border.all(color: palette.cardBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    _buildAvatar(palette),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: Brand.displayFont,
+                              fontSize: 20,
+                              height: 1.2,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                              color: palette.title,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                PhosphorIconsRegular.student,
+                                size: 15,
+                                color:
+                                    studies == null
+                                        ? palette.muted
+                                        : Brand.blue,
+                              ),
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  studies ?? 'Agrega tu carrera',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: Brand.displayFont,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color:
+                                        studies == null
+                                            ? palette.muted
+                                            : palette.label,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (email.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              email,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 12.5,
+                                color: palette.muted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (percent < 100) ...[
+                  const SizedBox(height: 16),
+                  _CompletionBar(percent: percent, onTap: widget.onEditProfile),
+                ],
+                const SizedBox(height: 16),
+                OutlineActionButton(
+                  text: 'Editar perfil',
+                  icon: PhosphorIconsRegular.pencilSimple,
+                  onPressed: widget.onEditProfile,
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(AuthPalette palette) {
+    return Semantics(
+      button: true,
+      label: 'Cambiar foto de perfil',
+      child: GestureDetector(
+        onTap: _changePhoto,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [Brand.blue, Brand.green],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: palette.card,
+                ),
+                child: UserAvatar(name: _name, photo: _photo, radius: 36),
+              ),
+            ),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Brand.blue,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: palette.card, width: 2),
+                ),
+                child:
+                    _isUploadingPhoto
+                        ? const Padding(
+                          padding: EdgeInsets.all(6),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(
+                          PhosphorIconsRegular.camera,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionBar extends StatelessWidget {
+  final int percent;
+  final VoidCallback onTap;
+
+  const _CompletionBar({required this.percent, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Brand.radiusMd),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: Brand.blue.withValues(alpha: palette.isDark ? 0.14 : 0.06),
+          borderRadius: BorderRadius.circular(Brand.radiusMd),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Tu perfil está al $percent%',
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: palette.label,
+                  ),
+                ),
+                const Spacer(),
+                const Text(
+                  'Completar',
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.blue,
+                  ),
+                ),
+                const Icon(
+                  PhosphorIconsRegular.caretRight,
+                  size: 14,
+                  color: Brand.blue,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Stack(
+                children: [
+                  Container(height: 6, color: palette.fieldBorder),
+                  FractionallySizedBox(
+                    widthFactor: percent / 100,
+                    child: Container(
+                      height: 6,
+                      decoration: const BoxDecoration(gradient: Brand.gradient),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _CircleIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: palette.card,
+        shape: CircleBorder(side: BorderSide(color: palette.cardBorder)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(icon, size: 21, color: palette.title),
+          ),
+        ),
       ),
     );
   }

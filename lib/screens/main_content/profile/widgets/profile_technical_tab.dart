@@ -1,20 +1,29 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:connect_do/services/profile_service.dart';
+import 'package:connect_do/services/user_service.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/utils/academic_options.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
 
+/// Pestaña "Perfil": muestra la información profesional del usuario.
+/// La edición se hace en "Completa tu perfil" (un solo lugar para editar).
 class ProfileTechnicalTab extends StatefulWidget {
-  final bool isDarkMode;
-  final bool isPrivateProfile;
+  final int refreshKey;
+  final VoidCallback onEditProfile;
+
+  /// Se llama cuando esta pestaña cambia algo por sí misma (por ejemplo, el CV).
+  final VoidCallback onProfileChanged;
 
   const ProfileTechnicalTab({
     super.key,
-    required this.isDarkMode,
-    required this.isPrivateProfile,
+    required this.refreshKey,
+    required this.onEditProfile,
+    required this.onProfileChanged,
   });
 
   @override
@@ -22,859 +31,554 @@ class ProfileTechnicalTab extends StatefulWidget {
 }
 
 class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
-  Map<String, dynamic> _userData = {};
-
-  String _userEmail = '';
-  String _userPhone = 'No registrado';
-  String _userCareer = '';
-  String _userCycle = '';
-  String _userDescription = '';
-  String _portfolioLink = '';
-  String _cvName = 'Sin CV';
-  String _cvPath = '';
-  int _cvSize = 0;
-
-  List<String> _skills = [];
-
-  final List<String> _habilidadesSugeridas = [
-    'Liderazgo',
-    'Trabajo en equipo',
-    'Comunicación efectiva',
-    'Resolución de problemas',
-    'Gestión del tiempo',
-    'Pensamiento crítico',
-    'Oratoria',
-    'Negociación',
-    'Adaptabilidad',
-    'Creatividad',
-    'Gestión de proyectos',
-    'Programación en Python',
-    'Programación en Java',
-    'C++',
-    'Desarrollo Web',
-    'HTML/CSS',
-    'JavaScript',
-    'Bases de Datos',
-    'SQL',
-    'Análisis de Datos',
-    'Redes de computadoras',
-    'Ciberseguridad',
-    'Soporte Técnico',
-    'Control de Calidad',
-    'Desarrollo Móvil (Flutter)',
-    'Git / GitHub',
-    'Diseño Gráfico',
-    'Adobe Photoshop',
-    'Adobe Illustrator',
-    'UX/UI',
-    'Figma',
-    'Edición de Video',
-    'Adobe Premiere',
-    'Fotografía',
-    'Modelado 3D',
-    'Animación',
-    'Branding corporativo',
-    'Marketing Digital',
-    'Contabilidad',
-    'Finanzas',
-    'Microsoft Excel',
-  ];
+  Map<String, dynamic> _user = {};
+  bool _isUploadingCv = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileTechnicalTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) _load();
+  }
+
+  Future<void> _load() async {
+    final user = await UserService.getUser();
+    if (mounted) setState(() => _user = user);
+  }
+
+  String _str(String key) => _user[key]?.toString().trim() ?? '';
+
+  List<String> get _skills {
+    final skills = _user['skills'];
+    return skills is List ? skills.map((s) => s.toString()).toList() : [];
+  }
+
+  String get _cvName {
+    for (final key in ['cv_file_name', 'cv_url']) {
+      if (_str(key).isNotEmpty) return _str(key).split(RegExp(r'[\\/]')).last;
+    }
+    return '';
+  }
+
+  /// "+50371234567" -> "+503 7123 4567".
+  static String _formatPhone(String phone) {
+    final match = RegExp(r'^\+503(\d{4})(\d{4})$').firstMatch(phone);
+    return match == null ? phone : '+503 ${match[1]} ${match[2]}';
   }
 
   // ===============================
-  // CARGAR DATOS DEL USUARIO
+  // ACCIONES
   // ===============================
-  Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _openPortfolio() async {
+    var link = _str('portfolio_link');
+    if (link.isEmpty) return;
+    if (!link.startsWith('http')) link = 'https://$link';
 
-    final datosJson = prefs.getString('usuario_actual');
+    final uri = Uri.tryParse(link);
+    final opened =
+        uri != null &&
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
 
-    if (datosJson == null || datosJson.isEmpty) return;
-
-    try {
-      final Map<String, dynamic> userData = jsonDecode(datosJson);
-
-      final String cvPath =
-          (userData['cv_file_path'] ??
-                  userData['cv_path'] ??
-                  userData['cv_url'] ??
-                  '')
-              .toString();
-
-      final String cvName =
-          (userData['cv_file_name'] ?? '').toString().isNotEmpty
-              ? userData['cv_file_name'].toString()
-              : (userData['cv_url'] ?? '').toString().isNotEmpty
-              ? userData['cv_url'].toString()
-              : cvPath.isNotEmpty
-              ? cvPath.split('/').last.split('\\').last
-              : 'Sin CV';
-
-      final int cvSize = _parseInt(userData['cv_file_size']);
-
-      if (!mounted) return;
-
-      setState(() {
-        _userData = userData;
-
-        _userEmail = userData['email']?.toString() ?? '';
-        _userPhone = userData['phone']?.toString() ?? 'No registrado';
-        _userCareer = userData['career']?.toString() ?? 'Sin carrera';
-        _userCycle = userData['cycle']?.toString() ?? 'Sin ciclo';
-        _userDescription = userData['description']?.toString() ?? '';
-        _portfolioLink = userData['portfolio_link']?.toString() ?? '';
-
-        _skills = List<String>.from(userData['skills'] ?? []);
-
-        _cvPath = cvPath;
-        _cvName = cvName;
-        _cvSize = cvSize;
-      });
-    } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        _userData = {};
-        _userEmail = '';
-        _userPhone = 'No registrado';
-        _userCareer = 'Sin carrera';
-        _userCycle = 'Sin ciclo';
-        _userDescription = '';
-        _portfolioLink = '';
-        _skills = [];
-        _cvPath = '';
-        _cvName = 'Sin CV';
-        _cvSize = 0;
-      });
+    if (!opened && mounted) {
+      showAuthMessage(context, 'No se pudo abrir el enlace.');
     }
   }
 
-  static int _parseInt(dynamic value) {
-    if (value == null) return 0;
+  Future<void> _uploadCv() async {
+    if (_isUploadingCv) return;
 
-    if (value is int) return value;
-
-    return int.tryParse(value.toString()) ?? 0;
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes <= 0) return '';
-
-    final kb = bytes / 1024;
-    final mb = kb / 1024;
-
-    if (mb >= 1) {
-      return '${mb.toStringAsFixed(1)} MB';
-    }
-
-    return '${kb.toStringAsFixed(0)} KB';
-  }
-
-  // ===============================
-  // GUARDAR CAMBIOS
-  // ===============================
-  Future<void> _saveChanges() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    _userData['phone'] = _userPhone;
-    _userData['career'] = _userCareer;
-    _userData['skills'] = _skills;
-    _userData['cycle'] = _userCycle;
-    _userData['description'] = _userDescription;
-    _userData['portfolio_link'] = _portfolioLink;
-
-    // CV local / demo.
-    _userData['cv_file_path'] = _cvPath;
-    _userData['cv_file_name'] = _cvName == 'Sin CV' ? '' : _cvName;
-    _userData['cv_file_size'] = _cvSize;
-    _userData['cv_path'] = _cvPath;
-
-    // Referencia que sí entiende el backend.
-    _userData['cv_url'] = _cvName == 'Sin CV' ? '' : _cvName;
-
-    await prefs.setString('usuario_actual', jsonEncode(_userData));
-
-    try {
-      await ProfileService.updateMyProfile(
-        phone: _userPhone,
-        career: _userCareer,
-        academicCycle: _userCycle,
-        bio: _userDescription,
-        portfolioUrl: _portfolioLink,
-        cvUrl: _cvName == 'Sin CV' ? '' : _cvName,
-      );
-    } catch (_) {
-      // Si falla backend, dejamos guardado local para no romper la demo.
-    }
-  }
-
-  // ===============================
-  // SELECCIONAR CV DESDE ARCHIVOS
-  // ===============================
-  Future<void> _pickCvFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx'],
-        allowMultiple: false,
-        withData: true,
       );
-
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
+      setState(() => _isUploadingCv = true);
 
-      setState(() {
-        _cvPath = file.name;
-        _cvName = file.name;
-        _cvSize = file.size;
-      });
+      final updated =
+          Map<String, dynamic>.from(_user)
+            ..['cv_file_name'] = file.name
+            ..['cv_file_path'] = file.path ?? ''
+            ..['cv_path'] = file.path ?? ''
+            ..['cv_file_size'] = file.size
+            ..['cv_url'] = file.name;
 
-      _userData['cv_file_name'] = file.name;
-      _userData['cv_file_path'] = file.name;
-      _userData['cv_path'] = file.name;
-      _userData['cv_url'] = file.name;
-      _userData['cv_file_size'] = file.size;
+      await UserService.saveUser(updated);
+      if (!mounted) return;
+      setState(() => _user = updated);
 
-      if (file.bytes != null) {
-        _userData['cv_file_base64'] = base64Encode(file.bytes!);
+      await ProfileService.updateMyProfile(cvUrl: file.name);
+      if (!mounted) return;
+      widget.onProfileChanged();
+      showAuthMessage(
+        context,
+        'Currículum actualizado',
+        type: AuthMessageType.success,
+      );
+    } catch (_) {
+      if (mounted) {
+        showAuthMessage(
+          context,
+          'Se guardó en tu teléfono, pero no se pudo sincronizar.',
+          type: AuthMessageType.info,
+        );
       }
-
-      await _saveChanges();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CV actualizado correctamente'),
-          backgroundColor: Color(0xFF22C55E),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al seleccionar CV: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    } finally {
+      if (mounted) setState(() => _isUploadingCv = false);
     }
   }
 
   // ===============================
-  // EDITAR CICLO
-  // ===============================
-  void _showUpdateCycleDialog() {
-    final controller = TextEditingController(text: _userCycle);
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Editar ciclo',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: controller,
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'Ej. Ciclo 06',
-              hintStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                setState(() {
-                  _userCycle = controller.text.trim();
-                });
-
-                await _saveChanges();
-
-                if (!mounted) return;
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Ciclo actualizado'),
-                    backgroundColor: Color(0xFF22C55E),
-                  ),
-                );
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // EDITAR SOBRE MÍ
-  // ===============================
-  void _showEditDescriptionDialog() {
-    final controller = TextEditingController(text: _userDescription);
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Editar sobre mí',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: controller,
-            maxLines: 5,
-            maxLength: 300,
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'Escribe algo sobre ti',
-              hintStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-              counterStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                setState(() {
-                  _userDescription = controller.text.trim();
-                });
-
-                await _saveChanges();
-
-                if (!mounted) return;
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Sobre mí actualizado'),
-                    backgroundColor: Color(0xFF22C55E),
-                  ),
-                );
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // EDITAR PORTAFOLIO
-  // ===============================
-  void _showEditPortfolioDialog() {
-    final controller = TextEditingController(text: _portfolioLink);
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Editar portafolio',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.url,
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-            ),
-            cursorColor: const Color(0xFF22C55E),
-            decoration: InputDecoration(
-              hintText: 'https://tu-portafolio.com',
-              hintStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.white54 : Colors.grey,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                setState(() {
-                  _portfolioLink = controller.text.trim();
-                });
-
-                await _saveChanges();
-
-                if (!mounted) return;
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Portafolio actualizado'),
-                    backgroundColor: Color(0xFF22C55E),
-                  ),
-                );
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // AÑADIR HABILIDAD
-  // ===============================
-  void _showAddSkillDialog() {
-    String selectedSkill = '';
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          title: Text(
-            'Añadir habilidad',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: DropdownButtonFormField<String>(
-            dropdownColor:
-                widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-            decoration: InputDecoration(
-              labelText: 'Selecciona una habilidad',
-              labelStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-              ),
-              border: const OutlineInputBorder(),
-            ),
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black87,
-            ),
-            items:
-                _habilidadesSugeridas.map((skill) {
-                  return DropdownMenuItem(value: skill, child: Text(skill));
-                }).toList(),
-            onChanged: (value) {
-              selectedSkill = value ?? '';
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                if (selectedSkill.isNotEmpty &&
-                    !_skills.contains(selectedSkill)) {
-                  setState(() {
-                    _skills.add(selectedSkill);
-                  });
-
-                  await _saveChanges();
-                }
-
-                if (!mounted) return;
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Habilidad añadida'),
-                    backgroundColor: Color(0xFF22C55E),
-                  ),
-                );
-              },
-              child: const Text('Añadir'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===============================
-  // BUILD
+  // UI
   // ===============================
   @override
   Widget build(BuildContext context) {
-    final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
+    final palette = AuthPalette.of(context);
+    final level = _str('level');
+    final university = AcademicOptions.normalizeUniversity(_str('university'));
+    final description = _str('description');
+    final skills = _skills;
 
     return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
+        16,
+        12,
+        16,
         ResponsiveHelper.appBottomNavSpace(context),
       ),
       children: [
-        _sectionTitle('Información General'),
+        _Section(
+          icon: PhosphorIconsRegular.sparkle,
+          title: 'Sobre mí',
+          onEdit: widget.onEditProfile,
+          child:
+              description.isEmpty
+                  ? _EmptyHint(
+                    text: 'Cuéntales a las empresas quién eres.',
+                    onTap: widget.onEditProfile,
+                  )
+                  : Text(
+                    description,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 14.5,
+                      height: 1.5,
+                      color: palette.label,
+                    ),
+                  ),
+        ),
+        _Section(
+          icon: PhosphorIconsRegular.student,
+          title: 'Estudios',
+          onEdit: widget.onEditProfile,
+          child: Column(
+            children: [
+              _InfoRow(
+                icon: PhosphorIconsRegular.buildings,
+                label: 'Universidad',
+                value:
+                    university == null
+                        ? null
+                        : AcademicOptions.universityLabel(university),
+                onEmptyTap: widget.onEditProfile,
+              ),
+              _InfoRow(
+                icon: PhosphorIconsRegular.briefcase,
+                label: 'Carrera',
+                value: _str('career'),
+                onEmptyTap: widget.onEditProfile,
+              ),
+              _InfoRow(
+                icon: PhosphorIconsRegular.certificate,
+                label: 'Nivel',
+                // "Pregrado (Licenciaturas, ...)" -> "Pregrado"
+                value: level.split(' (').first,
+                onEmptyTap: widget.onEditProfile,
+              ),
+              if (AcademicOptions.levelUsesCycle(level.isEmpty ? null : level))
+                _InfoRow(
+                  icon: PhosphorIconsRegular.calendarBlank,
+                  label: 'Ciclo',
+                  value: _str('cycle'),
+                  onEmptyTap: widget.onEditProfile,
+                  isLast: true,
+                ),
+            ],
+          ),
+        ),
+        _Section(
+          icon: PhosphorIconsRegular.lightning,
+          title: 'Habilidades',
+          onEdit: widget.onEditProfile,
+          child:
+              skills.isEmpty
+                  ? _EmptyHint(
+                    text: 'Agrega hasta 5 habilidades.',
+                    onTap: widget.onEditProfile,
+                  )
+                  : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final skill in skills)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Brand.blue.withValues(
+                              alpha: palette.isDark ? 0.18 : 0.08,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            skill,
+                            style: const TextStyle(
+                              fontFamily: Brand.displayFont,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Brand.blue,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+        ),
+        _Section(
+          icon: PhosphorIconsRegular.identificationCard,
+          title: 'Contacto',
+          onEdit: widget.onEditProfile,
+          child: Column(
+            children: [
+              _InfoRow(
+                icon: PhosphorIconsRegular.envelopeSimple,
+                label: 'Correo',
+                value: _str('email'),
+              ),
+              _InfoRow(
+                icon: PhosphorIconsRegular.phone,
+                label: 'Teléfono',
+                value: _formatPhone(_str('phone')),
+                onEmptyTap: widget.onEditProfile,
+                isLast: true,
+              ),
+            ],
+          ),
+        ),
+        _Section(
+          icon: PhosphorIconsRegular.fileText,
+          title: 'Documentos',
+          child: Column(
+            children: [
+              _ActionTile(
+                icon: PhosphorIconsRegular.link,
+                title:
+                    _str('portfolio_link').isEmpty
+                        ? 'Agregar portafolio'
+                        : _str('portfolio_link'),
+                subtitle:
+                    _str('portfolio_link').isEmpty
+                        ? 'Behance, GitHub, sitio web…'
+                        : 'Portafolio · toca para abrir',
+                accent: Brand.blue,
+                onTap:
+                    _str('portfolio_link').isEmpty
+                        ? widget.onEditProfile
+                        : _openPortfolio,
+                trailingIcon: PhosphorIconsRegular.arrowUpRight,
+              ),
+              const SizedBox(height: 10),
+              _ActionTile(
+                icon:
+                    _cvName.isEmpty
+                        ? PhosphorIconsRegular.uploadSimple
+                        : PhosphorIconsRegular.fileText,
+                title: _cvName.isEmpty ? 'Subir currículum' : _cvName,
+                subtitle:
+                    _cvName.isEmpty
+                        ? 'PDF o Word'
+                        : 'Currículum · toca para reemplazar',
+                accent: _cvName.isEmpty ? Brand.blue : Brand.green,
+                onTap: _uploadCv,
+                isLoading: _isUploadingCv,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
-        const SizedBox(height: 15),
+// =====================================================
+// PIEZAS
+// =====================================================
+class _Section extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final VoidCallback? onEdit;
 
-        if (!widget.isPrivateProfile) _infoCard(textColor),
+  const _Section({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.onEdit,
+  });
 
-        if (widget.isPrivateProfile) _privateProfileNotice(),
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
 
-        const SizedBox(height: 30),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 16),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 19, color: Brand.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: palette.title,
+                  ),
+                ),
+              ),
+              if (onEdit != null)
+                TextButton(
+                  onPressed: onEdit,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  child: const Text(
+                    'Editar',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Brand.blue,
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(height: 40),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(right: 8), child: child),
+        ],
+      ),
+    );
+  }
+}
 
-        _sectionTitle('Sobre mí'),
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? value;
+  final VoidCallback? onEmptyTap;
+  final bool isLast;
 
-        const SizedBox(height: 12),
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onEmptyTap,
+    this.isLast = false,
+  });
 
-        _descriptionCard(textColor),
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    final hasValue = value != null && value!.trim().isNotEmpty;
 
-        const SizedBox(height: 30),
-
-        _portfolioCard(textColor),
-
-        _sectionTitle('Curriculum Vitae'),
-
-        const SizedBox(height: 12),
-
-        _cvCard(textColor),
-
-        const SizedBox(height: 30),
-
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return InkWell(
+      onTap: hasValue ? null : onEmptyTap,
+      borderRadius: BorderRadius.circular(Brand.radiusSm),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border:
+              isLast
+                  ? null
+                  : Border(bottom: BorderSide(color: palette.cardBorder)),
+        ),
+        child: Row(
           children: [
-            _sectionTitle('Habilidades'),
-            TextButton.icon(
-              onPressed: _showAddSkillDialog,
-              icon: const Icon(Icons.add, color: Color(0xFF22C55E)),
-              label: const Text(
-                'Añadir',
-                style: TextStyle(color: Color(0xFF22C55E)),
+            Icon(icon, size: 18, color: palette.muted),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 92,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 13.5,
+                  color: palette.body,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                hasValue ? value! : 'Agregar',
+                textAlign: TextAlign.right,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color:
+                      hasValue
+                          ? palette.title
+                          : (onEmptyTap == null ? palette.muted : Brand.blue),
+                ),
               ),
             ),
           ],
         ),
-
-        const SizedBox(height: 12),
-
-        _skillsCard(),
-      ],
-    );
-  }
-
-  Widget _sectionTitle(String title) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 17,
-        color:
-            widget.isDarkMode ? Colors.blue.shade300 : const Color(0xFF1E3A8A),
       ),
     );
   }
+}
 
-  Widget _privateProfileNotice() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? Colors.white10 : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Text(
-        'Tu información general está oculta porque tienes activado el perfil privado.',
-        style: TextStyle(
-          color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-          height: 1.4,
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+  final IconData? trailingIcon;
+  final bool isLoading;
+
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+    this.trailingIcon,
+    this.isLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(Brand.radiusMd),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: authFieldDecoration(palette),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(Brand.radiusSm),
+              ),
+              child:
+                  isLoading
+                      ? Padding(
+                        padding: const EdgeInsets.all(11),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
+                      )
+                      : Icon(icon, size: 20, color: accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: palette.title,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 12.5,
+                      color: palette.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              trailingIcon ?? PhosphorIconsRegular.caretRight,
+              size: 18,
+              color: palette.muted,
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Widget _infoCard(Color textColor) {
-    return Card(
-      elevation: 0,
-      color: widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      child: Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.email, color: Color(0xFF2563EB)),
-            title: Text(
-              'Correo',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              _userEmail.isNotEmpty ? _userEmail : 'No registrado',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.phone, color: Color(0xFF22C55E)),
-            title: Text(
-              'Teléfono',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              _userPhone.isNotEmpty ? _userPhone : 'No registrado',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.school, color: Colors.orange),
-            title: Text(
-              'Carrera',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              _userCareer.isNotEmpty ? _userCareer : 'Sin carrera',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.timeline, color: Colors.purple),
-            title: Text(
-              'Ciclo',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              _userCycle.isNotEmpty ? _userCycle : 'Sin ciclo',
-              style: TextStyle(
-                color: widget.isDarkMode ? Colors.white70 : Colors.black54,
-              ),
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit, color: Colors.orange),
-              onPressed: _showUpdateCycleDialog,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class _EmptyHint extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
 
-  Widget _descriptionCard(Color textColor) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? Colors.white10 : Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(18),
-      ),
+  const _EmptyHint({required this.text, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return GestureDetector(
+      onTap: onTap,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
-              _userDescription.isNotEmpty
-                  ? _userDescription
-                  : 'Todavía no tienes descripción',
-              style: TextStyle(color: textColor, height: 1.5),
+              text,
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 14,
+                color: palette.muted,
+              ),
             ),
           ),
-
-          const SizedBox(width: 8),
-
-          InkWell(
-            onTap: _showEditDescriptionDialog,
-            borderRadius: BorderRadius.circular(20),
-            child: const Padding(
-              padding: EdgeInsets.all(4),
-              child: Icon(Icons.edit_outlined, color: Colors.orange, size: 21),
-            ),
-          ),
+          const Icon(PhosphorIconsRegular.plus, size: 18, color: Brand.blue),
         ],
       ),
-    );
-  }
-
-  Widget _portfolioCard(Color textColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('Portafolio'),
-
-        const SizedBox(height: 12),
-
-        Card(
-          elevation: 0,
-          color: widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          child: ListTile(
-            leading: const Icon(Icons.link, color: Colors.green),
-            title: Text(
-              _portfolioLink.isNotEmpty ? _portfolioLink : 'Sin portafolio',
-              style: TextStyle(color: textColor),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle:
-                _portfolioLink.isEmpty
-                    ? Text(
-                      'Toca el lápiz para agregar tu portafolio',
-                      style: TextStyle(
-                        color: widget.isDarkMode ? Colors.white60 : Colors.grey,
-                      ),
-                    )
-                    : null,
-            trailing: IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Colors.orange),
-              onPressed: _showEditPortfolioDialog,
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 30),
-      ],
-    );
-  }
-
-  Widget _cvCard(Color textColor) {
-    final hasCv = _cvName.isNotEmpty && _cvName != 'Sin CV';
-
-    final sizeLabel = _formatFileSize(_cvSize);
-
-    return Card(
-      elevation: 0,
-      color: widget.isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      child: ListTile(
-        onTap: _pickCvFile,
-        leading: Icon(
-          hasCv ? Icons.picture_as_pdf : Icons.upload_file,
-          color: hasCv ? Colors.red : const Color(0xFF22C55E),
-        ),
-        title: Text(
-          hasCv ? _cvName : 'Sin CV',
-          style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          hasCv
-              ? sizeLabel.isNotEmpty
-                  ? 'CV cargado · $sizeLabel · Toca para actualizarlo'
-                  : 'CV cargado. Toca para actualizarlo'
-              : 'Toca para subir tu CV',
-          style: TextStyle(
-            color: widget.isDarkMode ? Colors.white60 : Colors.grey,
-          ),
-        ),
-        trailing: const Icon(Icons.upload_file, color: Color(0xFF22C55E)),
-      ),
-    );
-  }
-
-  Widget _skillsCard() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? Colors.white10 : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child:
-          _skills.isEmpty
-              ? Text(
-                'Aún no has agregado habilidades',
-                style: TextStyle(
-                  color: widget.isDarkMode ? Colors.white60 : Colors.grey,
-                ),
-              )
-              : Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children:
-                    _skills.map((skill) {
-                      return InputChip(
-                        label: Text(
-                          skill,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        backgroundColor: const Color(0xFF22C55E),
-                        deleteIconColor: Colors.white,
-                        onDeleted: () async {
-                          setState(() {
-                            _skills.remove(skill);
-                          });
-
-                          await _saveChanges();
-
-                          if (!mounted) return;
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Habilidad eliminada'),
-                              backgroundColor: Colors.orange,
-                              duration: Duration(milliseconds: 900),
-                            ),
-                          );
-                        },
-                      );
-                    }).toList(),
-              ),
     );
   }
 }

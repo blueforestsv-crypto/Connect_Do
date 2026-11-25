@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/models/comment_model.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/api_config.dart';
 
@@ -26,12 +27,16 @@ class PublicationApiService {
     String? type,
     int limit = 20,
     int offset = 0,
+
+    /// Solo las publicaciones del usuario actual (perfil).
+    bool mine = false,
   }) async {
     final token = await _getAccessToken();
 
     final queryParams = <String, String>{
       'limit': limit.toString(),
       'offset': offset.toString(),
+      if (mine) 'mine': 'true',
     };
 
     if (type != null && type.trim().isNotEmpty) {
@@ -77,4 +82,187 @@ class PublicationApiService {
       );
     }
   }
+
+  // =====================================================
+  // CREAR PUBLICACIÓN
+  // =====================================================
+  Future<PublicationModel> createPublication({
+    required String type,
+    required String title,
+    required String description,
+    String visibility = 'contacts',
+    String? location,
+    String? modality,
+    List<Map<String, dynamic>> mediaItems = const [],
+  }) async {
+    final body = <String, dynamic>{
+      'type': type,
+      'title': title,
+      'description': description,
+      'visibility': visibility,
+      if (location != null && location.trim().isNotEmpty)
+        'location': location.trim(),
+      if (modality != null) 'modality': modality,
+      'media_items': mediaItems,
+    };
+
+    final response = await http.post(
+      ApiConfig.uri('/publications'),
+      headers: await _headers(json: true),
+      body: jsonEncode(body),
+    );
+
+    _ensureOk(response, 'No se pudo publicar. Inténtalo de nuevo.');
+
+    return PublicationModel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  // =====================================================
+  // PUBLICACIÓN INDIVIDUAL
+  // =====================================================
+  Future<PublicationModel> getPublication(String publicationId) async {
+    final response = await http.get(
+      ApiConfig.uri('/publications/$publicationId'),
+      headers: await _headers(),
+    );
+
+    _ensureOk(response, 'No se pudo cargar la publicación.');
+
+    return PublicationModel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  // =====================================================
+  // ME GUSTA
+  // =====================================================
+  /// Devuelve el estado final y el total de "me gusta".
+  Future<({bool liked, int likesCount})> setLiked(
+    String publicationId, {
+    required bool liked,
+  }) async {
+    final uri = ApiConfig.uri('/publications/$publicationId/like');
+    final headers = await _headers();
+
+    final response =
+        liked
+            ? await http.post(uri, headers: headers)
+            : await http.delete(uri, headers: headers);
+
+    _ensureOk(response, 'No se pudo actualizar el me gusta.');
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    return (
+      liked: data['liked'] == true,
+      likesCount: (data['likes_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  // =====================================================
+  // COMENTARIOS
+  // =====================================================
+  Future<List<CommentModel>> getComments(
+    String publicationId, {
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await http.get(
+      ApiConfig.uri('/publications/$publicationId/comments', {
+        'limit': '$limit',
+        'offset': '$offset',
+      }),
+      headers: await _headers(),
+    );
+
+    _ensureOk(response, 'No se pudieron cargar los comentarios.');
+
+    final data = jsonDecode(response.body);
+
+    return (data as List)
+        .whereType<Map<String, dynamic>>()
+        .map(CommentModel.fromJson)
+        .toList();
+  }
+
+  Future<CommentModel> addComment(String publicationId, String text) async {
+    final response = await http.post(
+      ApiConfig.uri('/publications/$publicationId/comments'),
+      headers: await _headers(json: true),
+      body: jsonEncode({'text': text}),
+    );
+
+    _ensureOk(response, 'No se pudo publicar el comentario.');
+
+    return CommentModel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<CommentModel> updateComment(
+    String publicationId,
+    String commentId,
+    String text,
+  ) async {
+    final response = await http.patch(
+      ApiConfig.uri('/publications/$publicationId/comments/$commentId'),
+      headers: await _headers(json: true),
+      body: jsonEncode({'text': text}),
+    );
+
+    _ensureOk(response, 'No se pudo editar el comentario.');
+
+    return CommentModel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteComment(String publicationId, String commentId) async {
+    final response = await http.delete(
+      ApiConfig.uri('/publications/$publicationId/comments/$commentId'),
+      headers: await _headers(),
+    );
+
+    _ensureOk(response, 'No se pudo eliminar el comentario.');
+  }
+
+  // =====================================================
+  // AUXILIARES
+  // =====================================================
+  Future<Map<String, String>> _headers({bool json = false}) async {
+    final token = await _getAccessToken();
+
+    return {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+      if (json) 'Content-Type': 'application/json',
+    };
+  }
+
+  /// Lanza una excepción con el mensaje del backend (campo "detail").
+  void _ensureOk(http.Response response, String fallback) {
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+
+    String message = fallback;
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['detail'] is String) {
+        message = data['detail'] as String;
+      }
+    } catch (_) {}
+
+    throw PublicationApiException(message, statusCode: response.statusCode);
+  }
+}
+
+class PublicationApiException implements Exception {
+  final String message;
+  final int statusCode;
+
+  const PublicationApiException(this.message, {required this.statusCode});
+
+  @override
+  String toString() => message;
 }

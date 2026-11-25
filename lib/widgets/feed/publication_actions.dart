@@ -1,629 +1,341 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:connect_do/models/contact_request_model.dart';
 import 'package:connect_do/models/publication_model.dart';
-import 'package:connect_do/services/comment_service.dart';
-import 'package:connect_do/services/contact_service.dart';
+import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/saved_publication_service.dart';
+import 'package:connect_do/theme/brand.dart';
+import 'package:connect_do/widgets/auth/auth_controls.dart';
 import 'package:connect_do/widgets/comment_sheet.dart';
 
+/// Contadores y botones: me gusta, comentar, guardar y compartir.
 class PublicationActions extends StatefulWidget {
   final PublicationModel post;
   final VoidCallback? onSavedChanged;
+
+  /// Avisa al feed cuando cambian likes o comentarios, para que el estado
+  /// se conserve al desplazarse y volver.
+  final ValueChanged<PublicationModel>? onChanged;
 
   const PublicationActions({
     super.key,
     required this.post,
     this.onSavedChanged,
+    this.onChanged,
   });
 
   @override
   State<PublicationActions> createState() => _PublicationActionsState();
 }
 
-class _PublicationActionsState extends State<PublicationActions> {
-  bool isLiked = false;
-  bool isSaved = false;
+class _PublicationActionsState extends State<PublicationActions>
+    with SingleTickerProviderStateMixin {
+  static final PublicationApiService _api = PublicationApiService();
 
-  int likes = 0;
-  int commentsCount = 0;
+  late bool _liked = widget.post.likedByMe;
+  late int _likes = widget.post.likes;
+  late int _comments = widget.post.comments;
+  bool _saved = false;
+  bool _likeInFlight = false;
+
+  late final AnimationController _likeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+
+  late final Animation<double> _likeScale = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 1, end: 1.35), weight: 40),
+    TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.9), weight: 30),
+    TweenSequenceItem(tween: Tween(begin: 0.9, end: 1), weight: 30),
+  ]).animate(CurvedAnimation(parent: _likeController, curve: Curves.easeOut));
 
   @override
   void initState() {
     super.initState();
-
-    _loadSavedState();
-    _loadCommentsCount();
+    _loadSaved();
   }
 
-  Future<void> _loadSavedState() async {
+  @override
+  void didUpdateWidget(covariant PublicationActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Al refrescar el feed llegan datos nuevos del servidor.
+    if (oldWidget.post != widget.post && !_likeInFlight) {
+      _liked = widget.post.likedByMe;
+      _likes = widget.post.likes;
+      _comments = widget.post.comments;
+    }
+  }
+
+  @override
+  void dispose() {
+    _likeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSaved() async {
     final saved = await SavedPublicationService.isSaved(widget.post.id);
-
-    if (!mounted) return;
-
-    setState(() {
-      isSaved = saved;
-    });
+    if (mounted) setState(() => _saved = saved);
   }
 
-  Future<void> _loadCommentsCount() async {
-    final comments = await CommentService.getComments(widget.post.id);
-
-    if (!mounted) return;
-
-    setState(() {
-      commentsCount = comments.length;
-    });
+  void _notifyChanged() {
+    widget.onChanged?.call(
+      widget.post.copyWith(
+        likes: _likes,
+        comments: _comments,
+        likedByMe: _liked,
+      ),
+    );
   }
 
-  void _toggleLike() {
-    setState(() {
-      isLiked = !isLiked;
+  // ===============================
+  // ME GUSTA (optimista)
+  // ===============================
+  Future<void> _toggleLike() async {
+    if (_likeInFlight) return;
 
-      if (isLiked) {
-        likes++;
-      } else {
-        if (likes > 0) {
-          likes--;
-        }
-      }
+    final previousLiked = _liked;
+    final previousLikes = _likes;
+    final next = !_liked;
+
+    HapticFeedback.lightImpact();
+    if (next) _likeController.forward(from: 0);
+
+    setState(() {
+      _likeInFlight = true;
+      _liked = next;
+      _likes = (_likes + (next ? 1 : -1)).clamp(0, 1 << 31);
     });
+
+    try {
+      final result = await _api.setLiked(widget.post.id, liked: next);
+      if (!mounted) return;
+      setState(() {
+        _liked = result.liked;
+        _likes = result.likesCount;
+      });
+      _notifyChanged();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _liked = previousLiked;
+        _likes = previousLikes;
+      });
+      showAuthMessage(context, error.toString());
+    } finally {
+      if (mounted) setState(() => _likeInFlight = false);
+    }
   }
 
+  // ===============================
+  // GUARDAR (local)
+  // ===============================
   Future<void> _toggleSave() async {
-    if (isSaved) {
+    HapticFeedback.selectionClick();
+
+    if (_saved) {
       await SavedPublicationService.removeSavedPublication(widget.post.id);
     } else {
       await SavedPublicationService.savePublication(widget.post);
     }
 
     if (!mounted) return;
-
-    setState(() {
-      isSaved = !isSaved;
-    });
-
+    setState(() => _saved = !_saved);
     widget.onSavedChanged?.call();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isSaved ? 'Publicación guardada' : 'Se eliminó de guardados',
-        ),
-        duration: const Duration(milliseconds: 900),
-      ),
+    showAuthMessage(
+      context,
+      _saved ? 'Guardada en tu perfil' : 'Se quitó de guardados',
+      type: AuthMessageType.info,
     );
   }
 
-  Future<void> _showCommentsSheet() async {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
+  // ===============================
+  // COMENTARIOS
+  // ===============================
+  Future<void> _openComments() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return CommentSheet(post: widget.post, isDarkMode: isDarkMode);
-      },
+      builder:
+          (_) => CommentSheet(
+            post: widget.post,
+            onCountChanged: (count) {
+              if (!mounted) return;
+              setState(() => _comments = count);
+              _notifyChanged();
+            },
+          ),
     );
-
-    await _loadCommentsCount();
   }
 
-  String _buildShareText() {
-    final description = widget.post.description.trim();
+  // ===============================
+  // COMPARTIR
+  // ===============================
+  Future<void> _share() async {
+    final post = widget.post;
+    final buffer =
+        StringBuffer()
+          ..writeln('Mira esta publicación de ${post.userName} en Connect Do:');
 
-    final buffer = StringBuffer();
-
-    buffer.writeln('Mira esta publicación de ${widget.post.userName}:');
-
-    if (description.isNotEmpty) {
-      buffer.writeln();
-      buffer.writeln(description);
+    if (post.title.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(post.title.trim());
+    }
+    if (post.description.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(post.description.trim());
     }
 
-    if ((widget.post.fileName ?? '').isNotEmpty) {
-      buffer.writeln();
-      buffer.writeln('Archivo adjunto: ${widget.post.fileName}');
-    }
-
-    buffer.writeln();
-    buffer.writeln('Compartido desde Project ENA');
-
-    return buffer.toString();
-  }
-
-  Future<void> _shareToExternalApp() async {
     try {
-      final text = _buildShareText();
-
-      final filePath = widget.post.filePath ?? widget.post.imagePath;
-
+      final filePath = post.filePath ?? post.imagePath;
       final hasLocalFile =
-          filePath != null && filePath.isNotEmpty && filePath.startsWith('/');
+          filePath != null &&
+          filePath.startsWith('/') &&
+          File(filePath).existsSync();
 
-      if (hasLocalFile && File(filePath).existsSync()) {
-        await Share.shareXFiles([XFile(filePath)], text: text);
-
-        return;
+      if (hasLocalFile) {
+        await Share.shareXFiles([XFile(filePath)], text: buffer.toString());
+      } else {
+        await Share.share(buffer.toString());
       }
-
-      await Share.share(text);
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo compartir: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo compartir.');
     }
   }
 
-  Future<String?> _getCurrentUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString('usuario_actual');
-
-    if (userJson == null || userJson.isEmpty) {
-      return null;
-    }
-
-    final userData = jsonDecode(userJson);
-
-    return userData['email'] ?? 'local_user';
-  }
-
-  Future<void> _showShareMenu() async {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        final textColor = isDarkMode ? Colors.white : Colors.black87;
-
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? Colors.grey[700] : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-
-                Text(
-                  'Compartir publicación',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                ListTile(
-                  leading: const Icon(
-                    Icons.person_add_alt_1_outlined,
-                    color: Color(0xFF2563EB),
-                  ),
-                  title: Text(
-                    'Enviar a contacto',
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Compartir dentro de la app',
-                    style: TextStyle(
-                      color:
-                          isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showContactsToShare();
-                  },
-                ),
-
-                ListTile(
-                  leading: const Icon(
-                    Icons.share_outlined,
-                    color: Color(0xFF22C55E),
-                  ),
-                  title: Text(
-                    'Compartir en otra app',
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'WhatsApp, Messenger, correo, etc.',
-                    style: TextStyle(
-                      color:
-                          isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _shareToExternalApp();
-                  },
-                ),
-
-                ListTile(
-                  leading: const Icon(
-                    Icons.dynamic_feed_outlined,
-                    color: Colors.orange,
-                  ),
-                  title: Text(
-                    'Compartir en el feed',
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Republicar en tu perfil',
-                    style: TextStyle(
-                      color:
-                          isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Compartir en el feed próximamente'),
-                        duration: Duration(milliseconds: 1200),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _showContactsToShare() async {
-    final currentUserId = await _getCurrentUserId();
-
-    if (!mounted) return;
-
-    if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se encontró el usuario actual'),
-          backgroundColor: Colors.red,
-        ),
-      );
-
-      return;
-    }
-
-    final contacts = await ContactService.getContacts(currentUserId);
-
-    if (!mounted) return;
-
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        final textColor = isDarkMode ? Colors.white : Colors.black87;
-        final subtitleColor =
-            isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
-
-        return SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.65,
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? Colors.grey[700] : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  'Enviar a contacto',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Expanded(
-                  child:
-                      contacts.isEmpty
-                          ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 30,
-                              ),
-                              child: Text(
-                                'Aún no tienes contactos para compartir esta publicación.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: subtitleColor,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          )
-                          : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-                            itemCount: contacts.length,
-                            itemBuilder: (context, index) {
-                              final contact = contacts[index];
-
-                              final contactData = _getContactData(
-                                contact,
-                                currentUserId,
-                              );
-
-                              return _contactShareTile(
-                                name: contactData.name,
-                                photo: contactData.photo,
-                                isDarkMode: isDarkMode,
-                                textColor: textColor,
-                                subtitleColor: subtitleColor,
-                                onTap: () {
-                                  Navigator.pop(context);
-
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Publicación enviada a ${contactData.name}',
-                                      ),
-                                      backgroundColor: const Color(0xFF22C55E),
-                                      duration: const Duration(
-                                        milliseconds: 1200,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  _ContactShareData _getContactData(
-    ContactRequestModel contact,
-    String currentUserId,
-  ) {
-    final isRequester = contact.requesterId == currentUserId;
-
-    if (isRequester) {
-      return _ContactShareData(
-        id: contact.receiverId,
-        name: contact.receiverName,
-        photo: contact.receiverPhoto,
-      );
-    }
-
-    return _ContactShareData(
-      id: contact.requesterId,
-      name: contact.requesterName,
-      photo: contact.requesterPhoto,
-    );
-  }
-
-  Widget _contactShareTile({
-    required String name,
-    required String photo,
-    required bool isDarkMode,
-    required Color textColor,
-    required Color subtitleColor,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF121212) : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: ListTile(
-        onTap: onTap,
-        leading: _buildContactAvatar(photo),
-        title: Text(
-          name,
-          style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          'Enviar publicación',
-          style: TextStyle(color: subtitleColor, fontSize: 12),
-        ),
-        trailing: const Icon(Icons.send_rounded, color: Color(0xFF22C55E)),
-      ),
-    );
-  }
-
-  Widget _buildContactAvatar(String photo) {
-    if (photo.isEmpty) {
-      return const CircleAvatar(
-        radius: 23,
-        backgroundColor: Color(0xFFE5E7EB),
-        child: Icon(Icons.person, color: Colors.grey),
-      );
-    }
-
-    if (photo.startsWith('/')) {
-      return CircleAvatar(radius: 23, backgroundImage: FileImage(File(photo)));
-    }
-
-    return CircleAvatar(
-      radius: 23,
-      backgroundImage: NetworkImage(photo),
-      onBackgroundImageError: (_, __) {},
-    );
-  }
-
+  // ===============================
+  // UI
+  // ===============================
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    final normalColor =
-        isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700;
-
-    final countColor = isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700;
+    final palette = AuthPalette.of(context);
 
     return Column(
       children: [
-        if (likes > 0 || commentsCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _buildStatsText(),
-                style: TextStyle(
-                  color: countColor,
-                  fontWeight: FontWeight.w500,
-                ),
+        Divider(height: 1, color: palette.cardBorder),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            ScaleTransition(
+              scale: _likeScale,
+              child: _ActionButton(
+                icon:
+                    _liked
+                        ? PhosphorIconsFill.heart
+                        : PhosphorIconsRegular.heart,
+                semanticLabel: _liked ? 'Quitar me gusta' : 'Me gusta',
+                count: _likes,
+                color: _liked ? const Color(0xFFEF4444) : palette.body,
+                onTap: _toggleLike,
               ),
             ),
-          ),
-
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _actionButton(
-              icon: isLiked ? Icons.favorite : Icons.favorite_border,
-              text: 'Me gusta',
-              color: isLiked ? Colors.red : normalColor,
-              onTap: _toggleLike,
+            _ActionButton(
+              icon: PhosphorIconsRegular.chatCircle,
+              semanticLabel: 'Comentarios',
+              count: _comments,
+              color: palette.body,
+              onTap: _openComments,
             ),
-
-            _actionButton(
-              icon: Icons.comment_outlined,
-              text: 'Comentar',
-              color: normalColor,
-              onTap: _showCommentsSheet,
+            _ActionButton(
+              icon: PhosphorIconsRegular.shareFat,
+              semanticLabel: 'Compartir',
+              color: palette.body,
+              onTap: _share,
             ),
-
-            _actionButton(
-              icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-              text: 'Guardar',
-              color: isSaved ? const Color(0xFF10B970) : normalColor,
+            const Spacer(),
+            _ActionButton(
+              icon:
+                  _saved
+                      ? PhosphorIconsFill.bookmarkSimple
+                      : PhosphorIconsRegular.bookmarkSimple,
+              semanticLabel: _saved ? 'Quitar de guardados' : 'Guardar',
+              color: _saved ? Brand.blue : palette.body,
               onTap: _toggleSave,
-            ),
-
-            _actionButton(
-              icon: Icons.share_outlined,
-              text: 'Compartir',
-              color: normalColor,
-              onTap: _showShareMenu,
             ),
           ],
         ),
       ],
     );
   }
+}
 
-  String _buildStatsText() {
-    final parts = <String>[];
+/// Botón de acción: ícono y, si aplica, contador al lado.
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String semanticLabel;
+  final Color color;
+  final VoidCallback onTap;
+  final int? count;
 
-    if (likes > 0) {
-      parts.add('$likes me gusta');
+  const _ActionButton({
+    required this.icon,
+    required this.semanticLabel,
+    required this.color,
+    required this.onTap,
+    this.count,
+  });
+
+  String get _countText {
+    final value = count ?? 0;
+    if (value >= 1000) {
+      final thousands = value / 1000;
+      return '${thousands.toStringAsFixed(thousands >= 10 ? 0 : 1)} mil';
     }
-
-    if (commentsCount > 0) {
-      parts.add(
-        commentsCount == 1 ? '1 comentario' : '$commentsCount comentarios',
-      );
-    }
-
-    return parts.join(' · ');
+    return '$value';
   }
 
-  Widget _actionButton({
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-    required Color color,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
+  @override
+  Widget build(BuildContext context) {
+    final showCount = (count ?? 0) > 0;
 
-            const SizedBox(width: 3),
-
-            Text(
-              text,
-              style: TextStyle(
-                color: color,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w500,
-              ),
+    return Semantics(
+      button: true,
+      label: showCount ? '$semanticLabel, $count' : semanticLabel,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: ConstrainedBox(
+          // Área táctil mínima recomendada.
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 22, color: color),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  child:
+                      showCount
+                          ? Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              _countText,
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: color,
+                              ),
+                            ),
+                          )
+                          : const SizedBox.shrink(),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _ContactShareData {
-  final String id;
-  final String name;
-  final String photo;
-
-  _ContactShareData({
-    required this.id,
-    required this.name,
-    required this.photo,
-  });
 }

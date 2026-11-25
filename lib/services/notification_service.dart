@@ -1,229 +1,82 @@
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/core/api/api_config.dart';
 import 'package:connect_do/models/notification_model.dart';
 
+/// Notificaciones del servidor (likes, comentarios, mensajes, contactos...).
 class NotificationService {
-  static const String _storageKey = 'app_notifications';
+  const NotificationService._();
 
-  // ==========================
-  // OBTENER NOTIFICACIONES
-  // ==========================
-  static Future<List<NotificationModel>> getNotifications() async {
+  static Future<Map<String, String>> _headers() async {
     final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
 
-    final data = prefs.getString(_storageKey);
-
-    if (data == null) {
-      return [];
+    if (token.isEmpty) {
+      throw Exception('No se encontró token de sesión.');
     }
 
-    final List decoded = jsonDecode(data);
-
-    final notifications =
-        decoded.map((item) => NotificationModel.fromJson(item)).toList();
-
-    notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    return notifications;
+    return {'Accept': 'application/json', 'Authorization': 'Bearer $token'};
   }
 
-  // ==========================
-  // AGREGAR NOTIFICACIÓN
-  // ==========================
-  static Future<void> addNotification(NotificationModel notification) async {
-    final prefs = await SharedPreferences.getInstance();
+  static Future<List<NotificationModel>> getNotifications({
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final response = await http.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}/notifications?limit=$limit&offset=$offset',
+      ),
+      headers: await _headers(),
+    );
 
-    final notifications = await getNotifications();
+    if (response.statusCode != 200) {
+      throw Exception('No se pudieron cargar las notificaciones.');
+    }
 
-    notifications.insert(0, notification);
+    final data = jsonDecode(response.body);
+    if (data is! List) return [];
 
-    final jsonList =
-        notifications.map((notification) => notification.toJson()).toList();
-
-    await prefs.setString(_storageKey, jsonEncode(jsonList));
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(NotificationModel.fromJson)
+        .toList();
   }
 
-  // ==========================
-  // MARCAR UNA COMO LEÍDA
-  // ==========================
+  /// Total sin leer, para el punto rojo de la campana. Devuelve 0 si falla.
+  static Future<int> getUnreadCount() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/notifications/unread-count'),
+        headers: await _headers(),
+      );
+
+      if (response.statusCode != 200) return 0;
+
+      final data = jsonDecode(response.body);
+      return (data is Map ? data['unread_count'] as num? : null)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static Future<void> markAsRead(String id) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final notifications = await getNotifications();
-
-    final updated =
-        notifications.map((notification) {
-          if (notification.id == id) {
-            notification.isRead = true;
-          }
-
-          return notification;
-        }).toList();
-
-    final jsonList =
-        updated.map((notification) => notification.toJson()).toList();
-
-    await prefs.setString(_storageKey, jsonEncode(jsonList));
+    await http.patch(
+      Uri.parse('${ApiConfig.baseUrl}/notifications/$id/read'),
+      headers: await _headers(),
+    );
   }
 
-  // ==========================
-  // MARCAR TODAS COMO LEÍDAS
-  // ==========================
   static Future<void> markAllAsRead() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final notifications = await getNotifications();
-
-    final updated =
-        notifications.map((notification) {
-          notification.isRead = true;
-          return notification;
-        }).toList();
-
-    final jsonList =
-        updated.map((notification) => notification.toJson()).toList();
-
-    await prefs.setString(_storageKey, jsonEncode(jsonList));
-  }
-
-  // ==========================
-  // ELIMINAR NOTIFICACIÓN
-  // ==========================
-  static Future<void> deleteNotification(String id) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final notifications = await getNotifications();
-
-    notifications.removeWhere((notification) => notification.id == id);
-
-    final jsonList =
-        notifications.map((notification) => notification.toJson()).toList();
-
-    await prefs.setString(_storageKey, jsonEncode(jsonList));
-  }
-
-  // ==========================
-  // LIMPIAR TODAS
-  // ==========================
-  static Future<void> clearNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.remove(_storageKey);
-  }
-
-  // ==========================
-  // HELPERS RÁPIDOS
-  // ==========================
-
-  static Future<void> notifyPublicationCreated({
-    required String userId,
-    required String userName,
-    required String userAvatar,
-    required String publicationId,
-  }) async {
-    final notification = NotificationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'publication_created',
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-      content: 'tu publicación se subió correctamente.',
-      timeAgo: 'Ahora',
-      referenceId: publicationId,
-      createdAt: DateTime.now(),
-      isRead: false,
+    final response = await http.patch(
+      Uri.parse('${ApiConfig.baseUrl}/notifications/read-all'),
+      headers: await _headers(),
     );
 
-    await addNotification(notification);
-  }
-
-  static Future<void> notifyContactRequest({
-    required String userId,
-    required String userName,
-    required String userAvatar,
-    required String requestId,
-  }) async {
-    final notification = NotificationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'contact_request',
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-      content: 'quiere agregarte como contacto.',
-      timeAgo: 'Ahora',
-      referenceId: requestId,
-      createdAt: DateTime.now(),
-      isRead: false,
-    );
-
-    await addNotification(notification);
-  }
-
-  static Future<void> notifyContactAccepted({
-    required String userId,
-    required String userName,
-    required String userAvatar,
-    required String requestId,
-  }) async {
-    final notification = NotificationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'contact_accepted',
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-      content: 'aceptó tu solicitud de contacto.',
-      timeAgo: 'Ahora',
-      referenceId: requestId,
-      createdAt: DateTime.now(),
-      isRead: false,
-    );
-
-    await addNotification(notification);
-  }
-
-  static Future<void> notifyNewMessage({
-    required String userId,
-    required String userName,
-    required String userAvatar,
-    required String chatId,
-  }) async {
-    final notification = NotificationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'message',
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-      content: 'te envió un nuevo mensaje.',
-      timeAgo: 'Ahora',
-      referenceId: chatId,
-      createdAt: DateTime.now(),
-      isRead: false,
-    );
-
-    await addNotification(notification);
-  }
-
-  static Future<void> notifySharedInterest({
-    required String userId,
-    required String userName,
-    required String userAvatar,
-    required String referenceId,
-  }) async {
-    final notification = NotificationModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'share',
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-      content: 'compartió algo que podría interesarte.',
-      timeAgo: 'Ahora',
-      referenceId: referenceId,
-      createdAt: DateTime.now(),
-      isRead: false,
-    );
-
-    await addNotification(notification);
+    if (response.statusCode != 200) {
+      throw Exception('No se pudieron marcar como leídas.');
+    }
   }
 }

@@ -76,6 +76,11 @@ class PublicationModel {
   final int likes;
   final int comments;
 
+  // Interacciones calculadas por el backend para el usuario actual.
+  final String authorId;
+  final bool likedByMe;
+  final bool isMine;
+
   PublicationModel({
     required this.id,
     required this.userName,
@@ -94,7 +99,35 @@ class PublicationModel {
     required this.createdAt,
     this.likes = 0,
     this.comments = 0,
+    this.authorId = '',
+    this.likedByMe = false,
+    this.isMine = false,
   });
+
+  PublicationModel copyWith({int? likes, int? comments, bool? likedByMe}) {
+    return PublicationModel(
+      id: id,
+      userName: userName,
+      userPhoto: userPhoto,
+      description: description,
+      title: title,
+      type: type,
+      location: location,
+      modality: modality,
+      visibility: visibility,
+      imagePath: imagePath,
+      mediaItems: mediaItems,
+      filePath: filePath,
+      fileName: fileName,
+      fileType: fileType,
+      createdAt: createdAt,
+      likes: likes ?? this.likes,
+      comments: comments ?? this.comments,
+      authorId: authorId,
+      likedByMe: likedByMe ?? this.likedByMe,
+      isMine: isMine,
+    );
+  }
 
   String get displayTitle {
     if (title.trim().isNotEmpty) {
@@ -165,6 +198,18 @@ class PublicationModel {
     return mediaItems.isNotEmpty;
   }
 
+  bool get hasLegacyMedia {
+    if (imagePath != null && imagePath!.trim().isNotEmpty) {
+      return true;
+    }
+
+    return filePath != null && filePath!.trim().isNotEmpty;
+  }
+
+  bool get hasAnyMedia {
+    return hasMedia || hasLegacyMedia;
+  }
+
   bool get isOpportunity {
     return type == 'job' ||
         type == 'internship' ||
@@ -199,6 +244,9 @@ class PublicationModel {
       'createdAt': createdAt.toIso8601String(),
       'likes': likes,
       'comments': comments,
+      'author_id': authorId,
+      'liked_by_me': likedByMe,
+      'is_mine': isMine,
     };
   }
 
@@ -268,8 +316,11 @@ class PublicationModel {
       // Backend usa created_at, local usaba createdAt
       createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
 
-      likes: _parseInt(json['likes']),
-      comments: _parseInt(json['comments']),
+      likes: _parseInt(json['likes_count'] ?? json['likes']),
+      comments: _parseInt(json['comments_count'] ?? json['comments']),
+      authorId: json['author_id']?.toString() ?? '',
+      likedByMe: json['liked_by_me'] == true,
+      isMine: json['is_mine'] == true,
     );
   }
 
