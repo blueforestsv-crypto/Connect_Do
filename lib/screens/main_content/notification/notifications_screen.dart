@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/notification_model.dart';
+import 'package:connect_do/screens/applications/my_applications_screen.dart';
+import 'package:connect_do/screens/applications/received_applications_screen.dart';
 import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
@@ -91,6 +93,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         chatAvatar: notification.actorPhoto,
       ),
       'message' => const ChatListScreen(),
+      'application_new' => const ReceivedApplicationsScreen(),
+      'application_status' => const MyApplicationsScreen(),
       _ => null,
     };
 
@@ -227,6 +231,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'contact_request' => (PhosphorIconsFill.userPlus, Brand.green),
     'contact_accepted' => (PhosphorIconsFill.handshake, Brand.green),
     'opportunity' => (PhosphorIconsFill.briefcase, const Color(0xFF8B5CF6)),
+    'application_new' => (PhosphorIconsFill.tray, const Color(0xFF8B5CF6)),
+    'application_status' => (
+      PhosphorIconsFill.paperPlaneTilt,
+      const Color(0xFFF59E0B),
+    ),
     'publication' => (PhosphorIconsFill.newspaper, Brand.blue),
     _ => (PhosphorIconsFill.bellSimple, const Color(0xFF64748B)),
   };

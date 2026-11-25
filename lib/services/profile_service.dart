@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:connect_do/core/api/api_config.dart';
 
@@ -43,6 +45,7 @@ class ProfileService {
     String? avatarUrl,
     String? profileImageBase64,
     String? cvUrl,
+    List<String>? skills,
     bool? isPrivate,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -64,6 +67,7 @@ class ProfileService {
       'avatar_url': avatarUrl,
       'profile_image_base64': profileImageBase64,
       'cv_url': cvUrl,
+      'skills': skills,
       'is_private': isPrivate,
     };
 
@@ -85,5 +89,109 @@ class ProfileService {
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  // =====================================================
+  // CV (archivo real en el servidor)
+  // =====================================================
+  static const int maxCvBytes = 5 * 1024 * 1024;
+
+  static Future<String> _token() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
+    if (token.isEmpty) {
+      throw Exception('Tu sesión expiró. Inicia sesión nuevamente.');
+    }
+    return token;
+  }
+
+  static String _detail(http.Response response, String fallback) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map && data['detail'] is String) return data['detail'];
+    } catch (_) {}
+    return fallback;
+  }
+
+  /// Abre el selector y sube el archivo. Devuelve el nombre, o null si la
+  /// persona canceló.
+  static Future<PlatformFile?> pickAndUploadCv() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return null;
+
+    final file = result.files.single;
+    await uploadCv(file);
+    return file;
+  }
+
+  static Future<void> uploadCv(PlatformFile file) async {
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      throw Exception('No se pudo leer el archivo.');
+    }
+    if (bytes.length > maxCvBytes) {
+      throw Exception('El CV no puede pesar más de 5 MB.');
+    }
+
+    final request =
+        http.MultipartRequest(
+            'PUT',
+            Uri.parse('${ApiConfig.baseUrl}/profiles/me/cv'),
+          )
+          ..headers['Authorization'] = 'Bearer ${await _token()}'
+          ..files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: file.name),
+          );
+
+    final response = await http.Response.fromStream(await request.send());
+    if (response.statusCode != 200) {
+      throw Exception(_detail(response, 'No se pudo subir tu CV.'));
+    }
+  }
+
+  static Future<void> deleteCv() async {
+    final response = await http.delete(
+      Uri.parse('${ApiConfig.baseUrl}/profiles/me/cv'),
+      headers: {'Authorization': 'Bearer ${await _token()}'},
+    );
+    if (response.statusCode != 204 && response.statusCode != 200) {
+      throw Exception(_detail(response, 'No se pudo quitar tu CV.'));
+    }
+  }
+
+  /// Pide un enlace temporal (10 min) y abre el CV en el visor del teléfono.
+  static Future<void> openCv(String userId) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/profiles/$userId/cv-link'),
+      headers: {'Authorization': 'Bearer ${await _token()}'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_detail(response, 'No se pudo abrir el CV.'));
+    }
+
+    final path = (jsonDecode(response.body) as Map)['path'].toString();
+    final opened = await launchUrl(
+      Uri.parse('${ApiConfig.baseUrl}$path'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened) throw Exception('No hay una app para abrir el CV.');
+  }
+
+  // =====================================================
+  // PERFIL DE OTRA PERSONA
+  // =====================================================
+  static Future<Map<String, dynamic>> getPublicProfile(String userId) async {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/profiles/$userId'),
+      headers: {'Authorization': 'Bearer ${await _token()}'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_detail(response, 'No se pudo cargar el perfil.'));
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
   }
 }

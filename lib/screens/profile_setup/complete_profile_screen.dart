@@ -53,6 +53,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   String? _cvPath;
   int _cvSize = 0;
 
+  /// Archivo elegido en esta pantalla; se sube al guardar.
+  PlatformFile? _pendingCv;
+
   @override
   void initState() {
     super.initState();
@@ -246,13 +249,20 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx'],
+        withData: true,
       );
       if (result == null) return;
 
       final file = result.files.single;
       if (!mounted) return;
 
+      if (file.size > ProfileService.maxCvBytes) {
+        showAuthMessage(context, 'El CV no puede pesar más de 5 MB.');
+        return;
+      }
+
       setState(() {
+        _pendingCv = file;
         _cvName = file.name;
         _cvPath = file.path;
         _cvSize = file.size;
@@ -338,8 +348,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         portfolioUrl: portfolio,
         phone: phone,
         profileImageBase64: photoBase64,
-        cvUrl: _cvName ?? '',
+        skills: List<String>.from(_skills),
       );
+      if (_pendingCv != null) {
+        await ProfileService.uploadCv(_pendingCv!);
+        _pendingCv = null;
+      }
     } catch (e) {
       syncError = e.toString();
     }

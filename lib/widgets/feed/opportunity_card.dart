@@ -51,7 +51,12 @@ class _OpportunityCardState extends State<OpportunityCard> {
   final ApplicationService _applicationService = ApplicationService();
 
   bool isApplying = false;
-  bool hasApplied = false;
+  bool _appliedHere = false;
+
+  /// También cuenta las postulaciones hechas antes (cargadas por el feed).
+  bool get hasApplied =>
+      _appliedHere ||
+      ApplicationService.appliedPublicationIds.contains(widget.post.id);
 
   Future<void> _apply() async {
     if (isApplying || hasApplied) return;
@@ -66,7 +71,7 @@ class _OpportunityCardState extends State<OpportunityCard> {
       );
 
       if (!mounted) return;
-      setState(() => hasApplied = true);
+      setState(() => _appliedHere = true);
       showAuthMessage(
         context,
         'Postulación enviada. ¡Mucho éxito!',
@@ -77,7 +82,7 @@ class _OpportunityCardState extends State<OpportunityCard> {
 
       final message = error.toString().replaceFirst('Exception: ', '');
       if (message.contains('Ya aplicaste')) {
-        setState(() => hasApplied = true);
+        setState(() => _appliedHere = true);
       }
       showAuthMessage(context, message);
     } finally {

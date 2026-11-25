@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/screens/people/user_profile_screen.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/feed/user_avatar.dart';
 
@@ -42,49 +43,56 @@ class PublicationHeader extends StatelessWidget {
 
     return Row(
       children: [
-        UserAvatar(name: post.userName, photo: post.userPhoto),
+        GestureDetector(
+          onTap: () => _openAuthor(context),
+          child: UserAvatar(name: post.userName, photo: post.userPhoto),
+        ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                post.userName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: Brand.displayFont,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: palette.title,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openAuthor(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  post.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: palette.title,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Text(
-                    timeAgo(post.createdAt),
-                    style: TextStyle(
-                      fontFamily: Brand.displayFont,
-                      fontSize: 12.5,
-                      color: palette.muted,
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      timeAgo(post.createdAt),
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        color: palette.muted,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '  ·  ',
-                    style: TextStyle(fontSize: 12, color: palette.muted),
-                  ),
-                  Tooltip(
-                    message: post.visibilityLabel,
-                    child: Icon(
-                      _visibilityIcon,
-                      size: 13,
-                      color: palette.muted,
+                    Text(
+                      '  ·  ',
+                      style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Tooltip(
+                      message: post.visibilityLabel,
+                      child: Icon(
+                        _visibilityIcon,
+                        size: 13,
+                        color: palette.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         if (_canDelete || _canHide)
@@ -98,6 +106,16 @@ class PublicationHeader extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  void _openAuthor(BuildContext context) {
+    if (post.authorId.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(userId: post.authorId),
+      ),
     );
   }
 

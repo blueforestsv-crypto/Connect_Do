@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
+import 'package:connect_do/services/application_service.dart';
 import 'package:connect_do/services/notification_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -86,6 +87,15 @@ class FeedScreenState extends State<FeedScreen> {
     widget.scrollController.addListener(_onScroll);
     _loadHidden().then((_) => _loadFirstPage());
     _loadUnreadNotifications();
+    _loadMyApplications();
+  }
+
+  /// Para que las oportunidades ya postuladas digan "Postulado".
+  Future<void> _loadMyApplications() async {
+    try {
+      await ApplicationService.getMyApplications();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   @override

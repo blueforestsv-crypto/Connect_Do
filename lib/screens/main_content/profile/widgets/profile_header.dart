@@ -7,6 +7,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:connect_do/helpers/profile_completion.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/services/user_service.dart';
+import 'package:connect_do/screens/applications/my_applications_screen.dart';
+import 'package:connect_do/screens/applications/received_applications_screen.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/academic_options.dart';
 import 'package:connect_do/widgets/auth/auth_controls.dart';
@@ -251,12 +253,36 @@ class _ProfileHeaderState extends State<ProfileHeader> {
                   icon: PhosphorIconsRegular.pencilSimple,
                   onPressed: widget.onEditProfile,
                 ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _QuickLink(
+                        icon: PhosphorIconsRegular.paperPlaneTilt,
+                        label: 'Mis postulaciones',
+                        onTap: () => _push(const MyApplicationsScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _QuickLink(
+                        icon: PhosphorIconsRegular.tray,
+                        label: 'Recibidas',
+                        onTap: () => _push(const ReceivedApplicationsScreen()),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _push(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _buildAvatar(AuthPalette palette) {
@@ -420,6 +446,55 @@ class _CircleIconButton extends StatelessWidget {
             width: 42,
             height: 42,
             child: Icon(icon, size: 21, color: palette.title),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickLink extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickLink({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Material(
+      color: Brand.blue.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(Brand.radiusMd),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Brand.radiusMd),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 17, color: Brand.blue),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.title,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

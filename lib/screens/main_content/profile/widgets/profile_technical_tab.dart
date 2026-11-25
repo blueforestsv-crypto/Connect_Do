@@ -96,11 +96,15 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx'],
+        withData: true,
       );
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
       setState(() => _isUploadingCv = true);
+
+      // Primero el servidor: así las empresas pueden abrirlo de verdad.
+      await ProfileService.uploadCv(file);
 
       final updated =
           Map<String, dynamic>.from(_user)
@@ -113,21 +117,17 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
       await UserService.saveUser(updated);
       if (!mounted) return;
       setState(() => _user = updated);
-
-      await ProfileService.updateMyProfile(cvUrl: file.name);
-      if (!mounted) return;
       widget.onProfileChanged();
       showAuthMessage(
         context,
         'Currículum actualizado',
         type: AuthMessageType.success,
       );
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         showAuthMessage(
           context,
-          'Se guardó en tu teléfono, pero no se pudo sincronizar.',
-          type: AuthMessageType.info,
+          error.toString().replaceFirst('Exception: ', ''),
         );
       }
     } finally {
