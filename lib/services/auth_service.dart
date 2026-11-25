@@ -464,6 +464,12 @@ class AuthService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Si quedaba guardada otra sesión (otra cuenta), se revoca en el servidor.
+    final previous = prefs.getString('refresh_token') ?? '';
+    if (previous.isNotEmpty && previous != refreshToken) {
+      _revokeRefreshToken(previous).ignore();
+    }
+
     await prefs.setString('access_token', accessToken);
 
     if (refreshToken.isNotEmpty) {
@@ -716,30 +722,112 @@ class AuthService {
   static Future<void> refreshProfileFromBackend() =>
       _syncCurrentProfileFromBackend();
 
-  /// Cierra la sesión. Con [forgetUser] en false se conserva la tarjeta de
-  /// "Hola de nuevo" en el login (sin token, se pedirá la contraseña).
+  // =====================================================
+  // RENOVAR LA SESIÓN
+  // =====================================================
+  // El token de acceso dura 30 minutos; el de renovación, 30 días. La app
+  // renueva el de acceso antes de que venza (al abrir, al volver a la app y
+  // cada pocos minutos; ver SessionKeeper).
+
+  static const Duration _refreshMargin = Duration(minutes: 5);
+  static Future<bool?>? _refreshing;
+
+  /// Momento en que vence un JWT (sin verificar la firma: solo para saber
+  /// cuándo renovarlo).
+  static DateTime? _tokenExpiry(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final exp = (payload as Map)['exp'];
+      return exp is num
+          ? DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000)
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// true = hay sesión válida (renovada si hacía falta).
+  /// false = el servidor la rechazó (vencida o revocada): hay que entrar de
+  /// nuevo. null = no se pudo comprobar (sin conexión).
+  static Future<bool?> ensureFreshSession({bool force = false}) {
+    return _refreshing ??= _ensureFreshSession(
+      force,
+    ).whenComplete(() => _refreshing = null);
+  }
+
+  static Future<bool?> _ensureFreshSession(bool force) async {
+    final prefs = await SharedPreferences.getInstance();
+    final access = prefs.getString('access_token') ?? '';
+    final refresh = prefs.getString('refresh_token') ?? '';
+
+    final expiry = access.isEmpty ? null : _tokenExpiry(access);
+    final stillValid =
+        expiry != null && expiry.isAfter(DateTime.now().add(_refreshMargin));
+    if (!force && stillValid) return true;
+    if (refresh.isEmpty) return stillValid ? true : false;
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}/auth/refresh'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refresh_token': refresh}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final newAccess = data['access_token']?.toString() ?? '';
+        if (newAccess.isEmpty) return null;
+        await prefs.setString('access_token', newAccess);
+        return true;
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return false;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _revokeRefreshToken(String refreshToken) async {
+    try {
+      await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}/auth/logout'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refresh_token': refreshToken}),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {}
+  }
+
+  /// Cierra la sesión.
+  ///
+  /// Con [forgetUser] en false (botón "Cerrar sesión" del perfil) la cuenta
+  /// queda recordada en este teléfono: el login muestra "Continuar como…" y
+  /// se entra de nuevo con un toque, sin contraseña (como Facebook o
+  /// Instagram). Con true se olvida la cuenta y se revoca la sesión en el
+  /// servidor.
   static Future<void> logout({bool forgetUser = true}) async {
     final prefs = await SharedPreferences.getInstance();
 
     // Este teléfono deja de recibir push de la cuenta (antes de borrar tokens).
     await PushService.unregisterDevice();
 
-    // Revoca la sesión en el servidor (mejor esfuerzo: sin red, igual sale).
     final refreshToken = prefs.getString('refresh_token') ?? '';
-    if (refreshToken.isNotEmpty) {
-      try {
-        await http
-            .post(
-              Uri.parse('${ApiConfig.baseUrl}/auth/logout'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({'refresh_token': refreshToken}),
-            )
-            .timeout(const Duration(seconds: 8));
-      } catch (_) {}
+    if (forgetUser) {
+      // Revoca la sesión en el servidor (mejor esfuerzo: sin red, igual sale).
+      if (refreshToken.isNotEmpty) await _revokeRefreshToken(refreshToken);
+      await prefs.remove('refresh_token');
     }
 
     await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
     await prefs.setBool('sesion_activa', false);
     await prefs.remove(pendingVerificationKey);
 

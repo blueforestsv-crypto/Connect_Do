@@ -186,41 +186,46 @@ class _LoginScreenState extends State<LoginScreen> {
   // ENTRAR COMO USUARIO GUARDADO
   // =====================================================
   Future<void> _handleQuickLogin() async {
-    final prefs = await SharedPreferences.getInstance();
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
 
-    final token = prefs.getString('access_token');
+    // La cuenta quedó recordada: se renueva la sesión sin contraseña.
+    final ok = await AuthService.ensureFreshSession(force: true);
+    if (!mounted) return;
 
-    if (token == null || token.isEmpty) {
+    if (ok == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('sesion_activa', true);
+      await _syncSavedUserWithBackendProfile();
       if (!mounted) return;
 
-      setState(() {
-        _showQuickLogin = false;
-        _userController.text = _savedEmail ?? '';
-      });
-
-      showAuthMessage(
+      Navigator.pushAndRemoveUntil(
         context,
-        'Tu sesión expiró. Escribe tu contraseña para continuar.',
-        type: AuthMessageType.info,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
       );
-
       return;
     }
 
+    setState(() => _isLoading = false);
+
+    if (ok == null) {
+      showAuthMessage(
+        context,
+        'No hay conexión con el servidor. Inténtalo de nuevo.',
+      );
+      return;
+    }
+
+    // La sesión venció (más de 30 días) o se cerró desde otro lado.
     setState(() {
-      _isLoading = true;
+      _showQuickLogin = false;
+      _userController.text = _savedEmail ?? '';
     });
-
-    await prefs.setBool('sesion_activa', true);
-
-    await _syncSavedUserWithBackendProfile();
-
-    if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
+    showAuthMessage(
       context,
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-      (route) => false,
+      'Por seguridad, vuelve a entrar con tu contraseña o con Google.',
+      type: AuthMessageType.info,
     );
   }
 

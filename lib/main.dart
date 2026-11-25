@@ -17,6 +17,7 @@ import 'screens/main_content/profile/profile_screen.dart';
 
 import 'services/auth_service.dart';
 import 'services/push_service.dart';
+import 'services/session_keeper.dart';
 import 'services/theme_service.dart';
 
 void main() async {
@@ -26,6 +27,17 @@ void main() async {
   await PushService.init();
 
   final Widget initialScreen = await _getInitialScreen();
+
+  // Renueva la sesión mientras la app esté abierta. Si el servidor la
+  // rechaza, vuelve al login (con "Continuar como…").
+  SessionKeeper.instance.start(
+    onExpired: () {
+      PushService.navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        '/login',
+        (_) => false,
+      );
+    },
+  );
 
   runApp(MyApp(initialScreen: initialScreen));
 }
@@ -40,6 +52,15 @@ Future<Widget> _getInitialScreen() async {
   final String? userJson = prefs.getString('usuario_actual');
 
   final bool hasUser = userJson != null && userJson.isNotEmpty;
+
+  // Si el token de acceso venció (dura 30 min), se renueva antes de entrar.
+  // Sin conexión se entra igual; si el servidor la rechaza, va al login.
+  if (sessionActive && hasUser) {
+    if (await AuthService.ensureFreshSession() == false) {
+      await prefs.setBool('sesion_activa', false);
+      return const LoginScreen();
+    }
+  }
 
   if (sessionActive && hasUser) {
     // Cuenta creada pero el correo aún no se verificó.
