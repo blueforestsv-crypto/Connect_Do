@@ -3,6 +3,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
+import 'package:connect_do/screens/people/user_posts_screen.dart';
 import 'package:connect_do/services/contact_service.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -160,6 +161,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Widget _buildBody(AuthPalette palette) {
     final isMe = _profile!['is_me'] == true;
+    final limited = _profile!['limited'] == true;
     final hasCv = _profile!['has_cv'] == true;
     final skills =
         (_profile!['skills'] as List? ?? const [])
@@ -246,6 +248,65 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ],
           ),
         ),
+        if (limited)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: BrandCard(
+              child: Column(
+                children: [
+                  Icon(
+                    PhosphorIconsRegular.lockKey,
+                    size: 30,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Perfil privado',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: palette.title,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cuando acepte tu solicitud podrás ver su información y '
+                    'sus publicaciones.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 13.5,
+                      height: 1.4,
+                      color: palette.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!limited)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: BrandCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: _InfoRow(
+                PhosphorIconsRegular.newspaper,
+                isMe ? 'Ver mis publicaciones' : 'Ver sus publicaciones',
+                onTap:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) => UserPostsScreen(
+                              userId: widget.userId,
+                              userName: _name,
+                            ),
+                      ),
+                    ),
+              ),
+            ),
+          ),
         if (_text('bio').isNotEmpty)
           _Section(
             title: 'Sobre mí',
@@ -305,7 +366,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               children: [for (final (i, t) in contact) _InfoRow(i, t)],
             ),
           )
-        else if (!isMe)
+        else if (!isMe && !limited)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
             child: Row(

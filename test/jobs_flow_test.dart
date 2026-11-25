@@ -147,6 +147,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(
+        find.text('Flutter'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Flutter'), findsOneWidget);
       final privacyNote = find.text(
         'Su correo y teléfono se muestran solo a sus contactos.',
@@ -166,5 +171,34 @@ void main() {
     }, () => mock);
 
     expect(requests, contains('POST /contacts/requests/ana'));
+  });
+
+  testWidgets('perfil privado: candado y sin datos', (tester) async {
+    final mock = MockClient(
+      (request) async => http.Response(
+        jsonEncode({
+          'user_id': 'luis',
+          'first_name': 'Luis',
+          'last_name': 'Pérez',
+          'university': 'UCA',
+          'is_me': false,
+          'is_private': true,
+          'limited': true,
+          'contact_status': 'none',
+        }),
+        200,
+      ),
+    );
+
+    await http.runWithClient(() async {
+      await tester.pumpWidget(
+        const MaterialApp(home: UserProfileScreen(userId: 'luis')),
+      );
+      await tester.pumpAndSettle();
+    }, () => mock);
+
+    expect(find.text('Perfil privado'), findsOneWidget);
+    expect(find.text('Conectar'), findsOneWidget);
+    expect(find.text('Ver sus publicaciones'), findsNothing);
   });
 }

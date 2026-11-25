@@ -79,6 +79,7 @@ class PublicationModel {
   // Interacciones calculadas por el backend para el usuario actual.
   final String authorId;
   final bool likedByMe;
+  final bool savedByMe;
   final bool isMine;
 
   PublicationModel({
@@ -101,10 +102,16 @@ class PublicationModel {
     this.comments = 0,
     this.authorId = '',
     this.likedByMe = false,
+    this.savedByMe = false,
     this.isMine = false,
   });
 
-  PublicationModel copyWith({int? likes, int? comments, bool? likedByMe}) {
+  PublicationModel copyWith({
+    int? likes,
+    int? comments,
+    bool? likedByMe,
+    bool? savedByMe,
+  }) {
     return PublicationModel(
       id: id,
       userName: userName,
@@ -125,6 +132,7 @@ class PublicationModel {
       comments: comments ?? this.comments,
       authorId: authorId,
       likedByMe: likedByMe ?? this.likedByMe,
+      savedByMe: savedByMe ?? this.savedByMe,
       isMine: isMine,
     );
   }
@@ -246,6 +254,7 @@ class PublicationModel {
       'comments': comments,
       'author_id': authorId,
       'liked_by_me': likedByMe,
+      'saved_by_me': savedByMe,
       'is_mine': isMine,
     };
   }
@@ -320,6 +329,7 @@ class PublicationModel {
       comments: _parseInt(json['comments_count'] ?? json['comments']),
       authorId: json['author_id']?.toString() ?? '',
       likedByMe: json['liked_by_me'] == true,
+      savedByMe: json['saved_by_me'] == true,
       isMine: json['is_mine'] == true,
     );
   }

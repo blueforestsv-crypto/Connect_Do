@@ -7,7 +7,6 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/publication_api_service.dart';
-import 'package:connect_do/services/saved_publication_service.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/auth/auth_controls.dart';
 import 'package:connect_do/widgets/comment_sheet.dart';
@@ -39,7 +38,7 @@ class _PublicationActionsState extends State<PublicationActions>
   late bool _liked = widget.post.likedByMe;
   late int _likes = widget.post.likes;
   late int _comments = widget.post.comments;
-  bool _saved = false;
+  late bool _saved = widget.post.savedByMe;
   bool _likeInFlight = false;
 
   late final AnimationController _likeController = AnimationController(
@@ -54,12 +53,6 @@ class _PublicationActionsState extends State<PublicationActions>
   ]).animate(CurvedAnimation(parent: _likeController, curve: Curves.easeOut));
 
   @override
-  void initState() {
-    super.initState();
-    _loadSaved();
-  }
-
-  @override
   void didUpdateWidget(covariant PublicationActions oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Al refrescar el feed llegan datos nuevos del servidor.
@@ -67,6 +60,7 @@ class _PublicationActionsState extends State<PublicationActions>
       _liked = widget.post.likedByMe;
       _likes = widget.post.likes;
       _comments = widget.post.comments;
+      if (!_saveInFlight) _saved = widget.post.savedByMe;
     }
   }
 
@@ -76,17 +70,13 @@ class _PublicationActionsState extends State<PublicationActions>
     super.dispose();
   }
 
-  Future<void> _loadSaved() async {
-    final saved = await SavedPublicationService.isSaved(widget.post.id);
-    if (mounted) setState(() => _saved = saved);
-  }
-
   void _notifyChanged() {
     widget.onChanged?.call(
       widget.post.copyWith(
         likes: _likes,
         comments: _comments,
         likedByMe: _liked,
+        savedByMe: _saved,
       ),
     );
   }
@@ -131,26 +121,37 @@ class _PublicationActionsState extends State<PublicationActions>
   }
 
   // ===============================
-  // GUARDAR (local)
+  // GUARDAR (en el servidor, optimista)
   // ===============================
+  bool _saveInFlight = false;
+
   Future<void> _toggleSave() async {
+    if (_saveInFlight) return;
     HapticFeedback.selectionClick();
 
-    if (_saved) {
-      await SavedPublicationService.removeSavedPublication(widget.post.id);
-    } else {
-      await SavedPublicationService.savePublication(widget.post);
+    final next = !_saved;
+    setState(() {
+      _saved = next;
+      _saveInFlight = true;
+    });
+
+    try {
+      await _api.setSaved(widget.post.id, saved: next);
+      if (!mounted) return;
+      _notifyChanged();
+      widget.onSavedChanged?.call();
+      showAuthMessage(
+        context,
+        next ? 'Guardada en tu perfil' : 'Se quitó de guardados',
+        type: AuthMessageType.info,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saved = !next);
+      showAuthMessage(context, error.toString());
+    } finally {
+      if (mounted) setState(() => _saveInFlight = false);
     }
-
-    if (!mounted) return;
-    setState(() => _saved = !_saved);
-    widget.onSavedChanged?.call();
-
-    showAuthMessage(
-      context,
-      _saved ? 'Guardada en tu perfil' : 'Se quitó de guardados',
-      type: AuthMessageType.info,
-    );
   }
 
   // ===============================

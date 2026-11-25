@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/models/contact_request_model.dart';
+import 'package:connect_do/screens/people/user_profile_screen.dart';
 import 'package:connect_do/services/contact_service.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
@@ -442,8 +443,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 : 'No encontramos a nadie',
         subtitle:
             _searchQuery.isEmpty
-                ? 'Busca compañeros o empresas por nombre o correo.'
-                : 'Prueba con otro nombre o correo.',
+                ? 'Busca por nombre, carrera o universidad.'
+                : 'Prueba con otro nombre, carrera o universidad.',
       );
     }
 
@@ -484,6 +485,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
       photo: photo,
       subtitle: career.isNotEmpty ? career : email,
       trailing: trailing,
+      onTap:
+          userId.isEmpty
+              ? null
+              : () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => UserProfileScreen(userId: userId),
+                ),
+              ),
     );
   }
 
@@ -754,63 +764,69 @@ class _UserTile extends StatelessWidget {
   final String photo;
   final String subtitle;
   final Widget trailing;
+  final VoidCallback? onTap;
 
   const _UserTile({
     required this.name,
     required this.photo,
     required this.subtitle,
     required this.trailing,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final palette = AuthPalette.of(context);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: palette.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.cardBorder),
-      ),
-      child: Row(
-        children: [
-          UserAvatar(name: name, photo: photo),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: palette.title,
-                  ),
-                ),
-                if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: palette.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: palette.cardBorder),
+        ),
+        child: Row(
+          children: [
+            UserAvatar(name: name, photo: photo),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    subtitle,
+                    name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: Brand.displayFont,
-                      fontSize: 13,
-                      color: palette.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: palette.title,
                     ),
                   ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 13,
+                        color: palette.muted,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          trailing,
-        ],
+            const SizedBox(width: 8),
+            trailing,
+          ],
+        ),
       ),
     );
   }

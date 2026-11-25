@@ -3,8 +3,41 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/models/publication_model.dart';
+import 'package:connect_do/services/publication_api_service.dart';
 
+/// Antes las guardadas vivían solo en el teléfono; ahora están en el
+/// servidor. Esto queda solo para migrar lo que había guardado localmente.
 class SavedPublicationService {
+  /// Sube al servidor lo guardado localmente y lo borra del teléfono.
+  /// Las que ya no existen se descartan.
+  static Future<void> migrateToServer() async {
+    final local = await getSavedPublications();
+    if (local.isEmpty) return;
+
+    final api = PublicationApiService();
+    final pending = <PublicationModel>[];
+    for (final post in local) {
+      try {
+        await api.setSaved(post.id, saved: true);
+      } catch (error) {
+        // Sin red: se reintenta la próxima vez. Si ya no existe, se descarta.
+        if (!(error is PublicationApiException && error.statusCode == 404)) {
+          pending.add(post);
+        }
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    if (pending.isEmpty) {
+      await prefs.remove(_storageKey);
+    } else {
+      await prefs.setString(
+        _storageKey,
+        jsonEncode(pending.map((post) => post.toJson()).toList()),
+      );
+    }
+  }
+
   static const String _storageKey = 'saved_publications';
 
   // ===============================

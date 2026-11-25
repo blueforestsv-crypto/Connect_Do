@@ -8,6 +8,7 @@ import 'package:connect_do/screens/auth/login/login_screen.dart';
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
 import 'package:connect_do/screens/profile_setup/complete_profile_screen.dart';
 import 'package:connect_do/services/auth_service.dart';
+import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/saved_publication_service.dart';
 import 'package:connect_do/services/theme_service.dart';
@@ -285,6 +286,42 @@ class _SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<_SettingsSheet> {
   bool _isDark = ThemeService.isDarkMode;
+  bool? _isPrivate; // null mientras carga
+  bool _savingPrivacy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ProfileService.getMyProfile().then((profile) {
+      if (mounted) {
+        setState(() => _isPrivate = profile?['is_private'] == true);
+      }
+    });
+  }
+
+  Future<void> _setPrivate(bool value) async {
+    setState(() {
+      _isPrivate = value;
+      _savingPrivacy = true;
+    });
+    try {
+      await ProfileService.updateMyProfile(isPrivate: value);
+      if (!mounted) return;
+      showAuthMessage(
+        context,
+        value
+            ? 'Perfil privado: solo tus contactos ven tu información'
+            : 'Perfil público',
+        type: AuthMessageType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isPrivate = !value);
+      showAuthMessage(context, 'No se pudo cambiar. Revisa tu conexión.');
+    } finally {
+      if (mounted) setState(() => _savingPrivacy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -361,11 +398,25 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   },
                 ),
               ),
-              const _SettingsTile(
+              _SettingsTile(
                 icon: PhosphorIconsRegular.eyeSlash,
                 title: 'Perfil privado',
-                subtitle: 'Elegir quién ve tu información',
-                comingSoon: true,
+                subtitle: 'Solo tus contactos ven tu información y posts',
+                trailing:
+                    _isPrivate == null
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Brand.blue,
+                          ),
+                        )
+                        : Switch.adaptive(
+                          value: _isPrivate!,
+                          activeTrackColor: Brand.blue,
+                          onChanged: _savingPrivacy ? null : _setPrivate,
+                        ),
               ),
             ]),
             _group(palette, null, [
@@ -432,7 +483,6 @@ class _SettingsTile extends StatelessWidget {
   final String? subtitle;
   final VoidCallback? onTap;
   final Widget? trailing;
-  final bool comingSoon;
   final bool danger;
 
   const _SettingsTile({
@@ -441,35 +491,25 @@ class _SettingsTile extends StatelessWidget {
     this.subtitle,
     this.onTap,
     this.trailing,
-    this.comingSoon = false,
     this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final palette = AuthPalette.of(context);
-    final color =
-        danger ? Brand.danger : (comingSoon ? palette.muted : palette.title);
+    final color = danger ? Brand.danger : palette.title;
 
     return ListTile(
-      enabled: !comingSoon,
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       leading: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: (danger ? Brand.danger : Brand.blue).withValues(
-            alpha: comingSoon ? 0.05 : 0.10,
-          ),
+          color: (danger ? Brand.danger : Brand.blue).withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(
-          icon,
-          size: 19,
-          color:
-              danger ? Brand.danger : (comingSoon ? palette.muted : Brand.blue),
-        ),
+        child: Icon(icon, size: 19, color: danger ? Brand.danger : Brand.blue),
       ),
       title: Text(
         title,
@@ -492,32 +532,14 @@ class _SettingsTile extends StatelessWidget {
                 ),
               ),
       trailing:
-          comingSoon
-              ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: palette.fieldFill,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: palette.cardBorder),
-                ),
-                child: Text(
-                  'Pronto',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: palette.muted,
-                  ),
-                ),
-              )
-              : trailing ??
-                  (onTap == null || danger
-                      ? null
-                      : Icon(
-                        PhosphorIconsRegular.caretRight,
-                        size: 18,
-                        color: palette.muted,
-                      )),
+          trailing ??
+          (onTap == null || danger
+              ? null
+              : Icon(
+                PhosphorIconsRegular.caretRight,
+                size: 18,
+                color: palette.muted,
+              )),
     );
   }
 }
@@ -661,7 +683,17 @@ class _SavedPublicationsTabState extends State<SavedPublicationsTab> {
   }
 
   Future<void> _load() async {
-    final posts = await SavedPublicationService.getSavedPublications();
+    List<PublicationModel> posts;
+    try {
+      // Lo guardado antes solo en el teléfono se pasa al servidor una vez.
+      await SavedPublicationService.migrateToServer();
+      posts = await PublicationApiService().getPublications(
+        saved: true,
+        limit: 100,
+      );
+    } catch (_) {
+      posts = _posts;
+    }
     if (!mounted) return;
     setState(() {
       _posts = posts;

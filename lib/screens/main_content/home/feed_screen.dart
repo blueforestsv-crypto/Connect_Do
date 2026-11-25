@@ -65,21 +65,10 @@ class FeedScreenState extends State<FeedScreen> {
   String _searchQuery = '';
   int _unreadNotifications = 0;
 
-  List<PublicationModel> get _visiblePosts {
-    final posts = _posts.where((post) => !_hiddenIds.contains(post.id));
-
-    if (_searchQuery.isEmpty) return posts.toList();
-
-    return posts.where((post) {
-      return [
-        post.userName,
-        post.title,
-        post.description,
-        post.typeLabel,
-        post.location ?? '',
-      ].any((field) => field.toLowerCase().contains(_searchQuery));
-    }).toList();
-  }
+  /// La búsqueda la hace el servidor (en todas las publicaciones, no solo
+  /// en las ya cargadas); aquí solo se quitan las ocultas.
+  List<PublicationModel> get _visiblePosts =>
+      _posts.where((post) => !_hiddenIds.contains(post.id)).toList();
 
   @override
   void initState() {
@@ -128,7 +117,11 @@ class FeedScreenState extends State<FeedScreen> {
     });
 
     try {
-      final page = await _api.getPublications(type: _type, limit: _pageSize);
+      final page = await _api.getPublications(
+        type: _type,
+        query: _searchQuery,
+        limit: _pageSize,
+      );
       if (!mounted || requestId != _requestId) return;
 
       setState(() {
@@ -154,6 +147,7 @@ class FeedScreenState extends State<FeedScreen> {
     try {
       final page = await _api.getPublications(
         type: _type,
+        query: _searchQuery,
         limit: _pageSize,
         offset: _posts.length,
       );
@@ -178,8 +172,7 @@ class FeedScreenState extends State<FeedScreen> {
 
   void _onScroll() {
     final position = widget.scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - 400 &&
-        _searchQuery.isEmpty) {
+    if (position.pixels >= position.maxScrollExtent - 400) {
       _loadMore();
     }
   }
@@ -199,8 +192,15 @@ class FeedScreenState extends State<FeedScreen> {
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
-      if (mounted) setState(() => _searchQuery = value.trim().toLowerCase());
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      final query = value.trim();
+      if (!mounted || query == _searchQuery) return;
+      setState(() {
+        _searchQuery = query;
+        _posts = [];
+        _hasMore = true;
+      });
+      _loadFirstPage(showSkeleton: true);
     });
   }
 

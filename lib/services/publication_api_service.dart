@@ -30,6 +30,15 @@ class PublicationApiService {
 
     /// Solo las publicaciones del usuario actual (perfil).
     bool mine = false,
+
+    /// Solo las que guardé.
+    bool saved = false,
+
+    /// Solo las de esta persona.
+    String? authorId,
+
+    /// Texto a buscar (título, descripción, lugar o autor).
+    String? query,
   }) async {
     final token = await _getAccessToken();
 
@@ -37,6 +46,9 @@ class PublicationApiService {
       'limit': limit.toString(),
       'offset': offset.toString(),
       if (mine) 'mine': 'true',
+      if (saved) 'saved': 'true',
+      if (authorId != null && authorId.isNotEmpty) 'author': authorId,
+      if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
     };
 
     if (type != null && type.trim().isNotEmpty) {
@@ -159,6 +171,19 @@ class PublicationApiService {
       liked: data['liked'] == true,
       likesCount: (data['likes_count'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  Future<bool> setSaved(String publicationId, {required bool saved}) async {
+    final uri = ApiConfig.uri('/publications/$publicationId/save');
+    final headers = await _headers();
+
+    final response =
+        saved
+            ? await http.put(uri, headers: headers)
+            : await http.delete(uri, headers: headers);
+
+    _ensureOk(response, 'No se pudo actualizar tus guardados.');
+    return (jsonDecode(response.body) as Map)['saved'] == true;
   }
 
   // =====================================================
