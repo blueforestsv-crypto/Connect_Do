@@ -16,7 +16,7 @@ class GoogleAuthConfig {
   /// que puede quedar escrito aquí para no pasarlo en cada compilación.
   /// Un --dart-define=GOOGLE_SERVER_CLIENT_ID=... lo reemplaza.
   static const String _defaultServerClientId =
-      '40574611598-bo2ekcv4224uvd07mhq7ns75o3tci5a7.apps.googleusercontent.com';
+      '4976582749-5hinphr7n60krs2mp9niumhrdqnmqv0c.apps.googleusercontent.com';
 
   static const String serverClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
