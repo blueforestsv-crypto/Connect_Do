@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
+import 'package:connect_do/widgets/chat/sticker_picker.dart';
 import 'package:connect_do/widgets/chat/voice_note_player.dart';
 
 Map<String, dynamic> _user(String id) => {
@@ -41,6 +42,11 @@ void main() {
   });
 
   testWidgets('muestra foto, nota de voz y texto', (tester) async {
+    // Pantalla del tamaño de un teléfono, para que quepan todos los mensajes.
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.5;
+    addTearDown(tester.view.reset);
+
     final mock = MockClient((request) async {
       if (request.url.path.endsWith('/messages')) {
         return http.Response(
@@ -55,6 +61,14 @@ void main() {
                     'https://res.cloudinary.com/x/image/upload/v1/connect_do/chat/a.jpg',
                 'width': 800,
                 'height': 600,
+              },
+            ),
+            _message(
+              '4',
+              attachment: {
+                'type': 'sticker',
+                'url':
+                    'https://res.cloudinary.com/x/image/upload/v1/connect_do/sticker/g.webp',
               },
             ),
             _message(
@@ -89,6 +103,8 @@ void main() {
       expect(find.text('Hola'), findsOneWidget);
       expect(find.text('Mira esto'), findsOneWidget);
       expect(find.byType(VoiceNotePlayer), findsOneWidget);
+      expect(find.byType(StickerImage), findsOneWidget);
+      expect(find.byTooltip('Stickers'), findsOneWidget);
       expect(find.text('0:07'), findsOneWidget);
       // Sin texto escrito, el botón principal graba (micrófono).
       expect(find.byTooltip('Grabar nota de voz'), findsOneWidget);

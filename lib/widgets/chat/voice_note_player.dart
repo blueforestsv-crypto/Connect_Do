@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/voice_note_cache.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/media/media_gallery.dart';
@@ -69,9 +72,36 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
           setState(() => _isPlaying = player.playing);
         }),
       );
-    final total = await player.setUrl(CloudinaryUrl.audio(widget.url));
+    final total = await _load(player);
     if (mounted) setState(() => _total = total);
     return player;
+  }
+
+  /// Se descarga la nota y se reproduce desde el teléfono. Primero el MP3;
+  /// si ese no abre, el archivo original.
+  Future<Duration?> _load(AudioPlayer player) async {
+    if (kIsWeb) return player.setUrl(CloudinaryUrl.audio(widget.url));
+
+    Object? lastError;
+    for (final url in VoiceNoteCache.candidates(widget.url)) {
+      try {
+        final path = await VoiceNoteCache.localFile(url);
+        return await player.setFilePath(path);
+      } catch (error) {
+        debugPrint('Nota de voz: no abrió $url → $error');
+        lastError = error;
+      }
+    }
+    throw lastError ?? Exception('Sin audio');
+  }
+
+  /// Texto corto del error, para poder diagnosticarlo si vuelve a pasar.
+  static String _errorDetail(Object error) {
+    if (error is PlayerException) return 'código ${error.code}';
+    if (error is HttpException) return error.message;
+    if (error is TimeoutException) return 'sin conexión';
+    final text = error.runtimeType.toString();
+    return text.length > 30 ? text.substring(0, 30) : text;
   }
 
   Future<void> _toggle() async {
@@ -104,8 +134,10 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
           _failed = true;
         });
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo reproducir la nota de voz.'),
+          SnackBar(
+            content: Text(
+              'No se pudo reproducir la nota de voz (${_errorDetail(error)}).',
+            ),
           ),
         );
       }

@@ -37,6 +37,11 @@ class CloudinaryUrl {
     return url.replaceFirst(RegExp(r'\.\w+$'), '.mp3');
   }
 
+  /// Sticker en tamaño de chat. Sin cambiar el formato, para que los
+  /// animados (webp de WhatsApp) sigan animados.
+  static String sticker(String url, {int size = 320}) =>
+      transform(url, 'c_fit,w_$size,h_$size,q_auto');
+
   /// Primer cuadro de un video como imagen (portada).
   static String videoPoster(String url, {int width = 900}) {
     if (!isCloudinary(url)) return url;

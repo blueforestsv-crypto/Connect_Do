@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connect_do/core/api/api_config.dart';
 
 /// Para qué se sube el archivo (define la carpeta y qué tipos se aceptan).
-enum MediaPurpose { post, avatar, chat, story }
+enum MediaPurpose { post, avatar, chat, story, sticker }
 
 enum MediaKind { image, video, audio }
 

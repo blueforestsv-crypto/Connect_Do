@@ -14,12 +14,14 @@ import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/media/media_viewer_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/services/media_upload_service.dart';
+import 'package:connect_do/services/sticker_service.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/responsive_helper.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/widgets/auth/auth_controls.dart';
 import 'package:connect_do/widgets/auth/auth_layout.dart';
+import 'package:connect_do/widgets/chat/sticker_picker.dart';
 import 'package:connect_do/widgets/chat/voice_note_player.dart';
 import 'package:connect_do/widgets/feed/user_avatar.dart';
 import 'package:connect_do/widgets/media/media_gallery.dart';
@@ -502,6 +504,93 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     }
   }
 
+  // ===============================
+  // STICKERS
+  // ===============================
+  Future<void> _openStickers() async {
+    FocusScope.of(context).unfocus();
+    final sticker = await showStickerPicker(context);
+    if (sticker == null || !mounted) return;
+    _enqueue(
+      ChatMessageModel(
+        id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+        text: '',
+        createdAt: DateTime.now(),
+        isMe: true,
+        attachmentType: 'sticker',
+        attachmentUrl: sticker.url,
+        width: sticker.width,
+        height: sticker.height,
+      ),
+    );
+  }
+
+  void _stickerOptions(ChatMessageModel message) {
+    final url = message.attachmentUrl;
+    if (url == null) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        return Container(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
+          decoration: BoxDecoration(
+            color: palette.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(Brand.radiusLg),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              StickerImage(url: url, size: 110),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(
+                  PhosphorIconsRegular.heart,
+                  color: Brand.blue,
+                ),
+                title: Text(
+                  'Agregar a mis stickers',
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontWeight: FontWeight.w600,
+                    color: palette.title,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  try {
+                    await StickerService.save(
+                      url: url,
+                      width: message.width,
+                      height: message.height,
+                    );
+                    if (mounted) {
+                      showAuthMessage(
+                        context,
+                        'Sticker guardado',
+                        type: AuthMessageType.success,
+                      );
+                    }
+                  } catch (error) {
+                    if (mounted) {
+                      showAuthMessage(
+                        context,
+                        error.toString().replaceFirst('Exception: ', ''),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _openMedia(ChatMessageModel message) {
     final item = message.asMediaItem;
     if (item == null) return;
@@ -664,6 +753,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                               message: message,
                               tight: groupedWithNewer,
                               onMediaTap: () => _openMedia(message),
+                              onStickerLongPress:
+                                  () => _stickerOptions(message),
                               onFailedTap:
                                   message.status == MessageStatus.failed
                                       ? () => _showFailedOptions(message)
@@ -760,38 +851,55 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   Expanded(
                     child: Container(
                       constraints: const BoxConstraints(minHeight: 46),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.only(left: 16, right: 2),
                       decoration: BoxDecoration(
                         color: palette.fieldFill,
                         borderRadius: BorderRadius.circular(23),
                         border: Border.all(color: palette.fieldBorder),
                       ),
-                      child: TextField(
-                        controller: _input,
-                        minLines: 1,
-                        maxLines: 5,
-                        maxLength: 2000,
-                        textCapitalization: TextCapitalization.sentences,
-                        keyboardType: TextInputType.multiline,
-                        cursorColor: Brand.blue,
-                        style: TextStyle(
-                          fontFamily: Brand.displayFont,
-                          fontSize: 15,
-                          color: palette.title,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Escribe un mensaje…',
-                          hintStyle: TextStyle(
-                            fontFamily: Brand.displayFont,
-                            color: palette.muted,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _input,
+                              minLines: 1,
+                              maxLines: 5,
+                              maxLength: 2000,
+                              textCapitalization: TextCapitalization.sentences,
+                              keyboardType: TextInputType.multiline,
+                              cursorColor: Brand.blue,
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 15,
+                                color: palette.title,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Escribe un mensaje…',
+                                hintStyle: TextStyle(
+                                  fontFamily: Brand.displayFont,
+                                  color: palette.muted,
+                                ),
+                                counterText: '',
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 13,
+                                ),
+                              ),
+                            ),
                           ),
-                          counterText: '',
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 13,
+                          IconButton(
+                            tooltip: 'Stickers',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _openStickers,
+                            icon: Icon(
+                              PhosphorIconsRegular.sticker,
+                              color: palette.muted,
+                              size: 22,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -987,13 +1095,74 @@ class _Bubble extends StatelessWidget {
   final bool tight;
   final VoidCallback? onFailedTap;
   final VoidCallback? onMediaTap;
+  final VoidCallback? onStickerLongPress;
 
   const _Bubble({
     required this.message,
     required this.tight,
     this.onFailedTap,
     this.onMediaTap,
+    this.onStickerLongPress,
   });
+
+  /// Sticker: grande y sin burbuja, con la hora debajo.
+  Widget _sticker(BuildContext context, AuthPalette palette, String time) {
+    final m = message;
+    final failed = m.status == MessageStatus.failed;
+    final icon = switch (m.status) {
+      MessageStatus.sending => PhosphorIconsRegular.clock,
+      MessageStatus.failed => PhosphorIconsFill.warningCircle,
+      MessageStatus.sent when m.isRead => PhosphorIconsRegular.checks,
+      MessageStatus.sent => PhosphorIconsRegular.check,
+    };
+
+    return Padding(
+      padding: EdgeInsets.only(top: tight ? 2 : 8),
+      child: Align(
+        alignment: m.isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: GestureDetector(
+          onTap: onFailedTap,
+          onLongPress: onStickerLongPress,
+          child: Column(
+            crossAxisAlignment:
+                m.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              StickerImage(url: m.attachmentUrl ?? '', size: 140),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      failed ? 'No enviado · toca para reintentar' : time,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 11,
+                        color: failed ? Brand.danger : palette.muted,
+                      ),
+                    ),
+                    if (m.isMe) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        icon,
+                        size: 14,
+                        color:
+                            failed
+                                ? Brand.danger
+                                : m.isRead
+                                ? Brand.blue
+                                : palette.muted,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Foto o portada de video dentro de la burbuja.
   Widget _visual(AuthPalette palette) {
@@ -1138,6 +1307,10 @@ class _Bubble extends StatelessWidget {
 
     final metaColor =
         isMe ? Colors.white.withValues(alpha: 0.75) : palette.muted;
+
+    if (message.attachmentType == 'sticker') {
+      return _sticker(context, palette, time);
+    }
 
     Widget statusIcon() {
       if (!isMe) return const SizedBox.shrink();

@@ -714,6 +714,7 @@ class ChatListModel {
       'image' => '📷 Foto',
       'video' => '🎥 Video',
       'audio' => '🎤 Nota de voz',
+      'sticker' => '💟 Sticker',
       _ => '',
     };
     final content =
