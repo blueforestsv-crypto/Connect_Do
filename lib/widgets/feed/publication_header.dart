@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/people/user_profile_screen.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -36,6 +37,7 @@ class PublicationHeader extends StatelessWidget {
 
   bool get _canDelete => post.isMine && onDelete != null;
   bool get _canHide => !post.isMine && onHide != null;
+  bool get _canReport => !post.isMine && post.id.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +97,7 @@ class PublicationHeader extends StatelessWidget {
             ),
           ),
         ),
-        if (_canDelete || _canHide)
+        if (_canDelete || _canHide || _canReport)
           IconButton(
             tooltip: 'Opciones',
             onPressed: () => _showOptions(context),
@@ -127,49 +129,80 @@ class PublicationHeader extends StatelessWidget {
       builder: (sheetContext) {
         final palette = AuthPalette.of(sheetContext);
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: palette.fieldBorder,
-                  borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: palette.fieldBorder,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-              ),
-              if (_canHide)
-                _OptionTile(
-                  icon: PhosphorIconsRegular.eyeSlash,
-                  color: palette.label,
-                  title: 'Ocultar publicación',
-                  subtitle: 'Dejarás de verla en tu inicio',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    onHide!();
-                  },
-                ),
-              if (_canDelete)
-                _OptionTile(
-                  icon: PhosphorIconsRegular.trash,
-                  color: Brand.danger,
-                  title: 'Eliminar publicación',
-                  subtitle: 'Se borrará para todos',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _confirmDelete(context);
-                  },
-                ),
-            ],
+                if (_canHide)
+                  _OptionTile(
+                    icon: PhosphorIconsRegular.eyeSlash,
+                    color: palette.label,
+                    title: 'Ocultar publicación',
+                    subtitle: 'Dejarás de verla en tu inicio',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      onHide!();
+                    },
+                  ),
+                if (_canReport)
+                  _OptionTile(
+                    icon: PhosphorIconsRegular.flag,
+                    color: palette.label,
+                    title: 'Reportar publicación',
+                    subtitle: 'Es anónimo',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      showReportSheet(
+                        context,
+                        targetType: 'publication',
+                        targetId: post.id,
+                      );
+                    },
+                  ),
+                if (_canReport && post.authorId.isNotEmpty)
+                  _OptionTile(
+                    icon: PhosphorIconsRegular.prohibit,
+                    color: Brand.danger,
+                    title: 'Bloquear a ${post.userName.split(' ').first}',
+                    subtitle: 'No verás nada suyo ni podrá escribirte',
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final blocked = await confirmBlock(
+                        context,
+                        userId: post.authorId,
+                        name: post.userName,
+                      );
+                      if (blocked) onHide?.call();
+                    },
+                  ),
+                if (_canDelete)
+                  _OptionTile(
+                    icon: PhosphorIconsRegular.trash,
+                    color: Brand.danger,
+                    title: 'Eliminar publicación',
+                    subtitle: 'Se borrará para todos',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _confirmDelete(context);
+                    },
+                  ),
+              ],
+            ),
           ),
         );
       },

@@ -98,26 +98,26 @@ class _NewStoryScreenState extends State<NewStoryScreen> {
           ),
           onTap: () => Navigator.pop(sheetContext, value),
         );
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              tile(PhosphorIconsRegular.image, 'Foto de la galería', 'photo'),
-              if (!kIsWeb)
-                tile(PhosphorIconsRegular.camera, 'Tomar foto', 'camera'),
-              tile(
-                PhosphorIconsRegular.videoCamera,
-                'Video (hasta $_maxVideoSeconds s)',
-                'video',
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tile(PhosphorIconsRegular.image, 'Foto de la galería', 'photo'),
+                if (!kIsWeb)
+                  tile(PhosphorIconsRegular.camera, 'Tomar foto', 'camera'),
+                tile(
+                  PhosphorIconsRegular.videoCamera,
+                  'Video (hasta $_maxVideoSeconds s)',
+                  'video',
+                ),
+              ],
+            ),
           ),
         );
       },

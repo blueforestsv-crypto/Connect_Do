@@ -136,63 +136,63 @@ class _StickerPickerState extends State<_StickerPicker> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final palette = AuthPalette.of(sheetContext);
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(
-                  PhosphorIconsRegular.whatsappLogo,
-                  color: Color(0xFF25D366),
-                ),
-                title: Text(
-                  'Importar mis stickers de WhatsApp',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontWeight: FontWeight.w600,
-                    color: palette.title,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.whatsappLogo,
+                    color: Color(0xFF25D366),
                   ),
-                ),
-                subtitle: Text(
-                  'Busca la carpeta:\n${StickerService.whatsAppFolder}',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontSize: 12,
-                    color: palette.muted,
+                  title: Text(
+                    'Importar mis stickers de WhatsApp',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w600,
+                      color: palette.title,
+                    ),
                   ),
-                ),
-                isThreeLine: true,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _import();
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  PhosphorIconsRegular.image,
-                  color: Brand.blue,
-                ),
-                title: Text(
-                  'Crear desde una foto',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontWeight: FontWeight.w600,
-                    color: palette.title,
+                  subtitle: Text(
+                    'Busca la carpeta:\n${StickerService.whatsAppFolder}',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 12,
+                      color: palette.muted,
+                    ),
                   ),
+                  isThreeLine: true,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _import();
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _fromPhoto();
-                },
-              ),
-            ],
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.image,
+                    color: Brand.blue,
+                  ),
+                  title: Text(
+                    'Crear desde una foto',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w600,
+                      color: palette.title,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _fromPhoto();
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },

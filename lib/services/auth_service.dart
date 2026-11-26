@@ -66,6 +66,7 @@ class AuthService {
     required String email,
     required String password,
     String? university,
+    bool acceptTerms = true,
   }) async {
     final cleanEmail = email.trim();
 
@@ -77,6 +78,7 @@ class AuthService {
         'password': password,
         'first_name': firstName.trim(),
         'last_name': lastName.trim(),
+        'accept_terms': acceptTerms,
       }),
     );
 
@@ -230,7 +232,8 @@ class AuthService {
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/google'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'id_token': idToken}),
+      // El botón de Google muestra que al continuar se aceptan los términos.
+      body: jsonEncode({'id_token': idToken, 'accept_terms': true}),
     );
 
     if (response.statusCode != 200) {
@@ -501,9 +504,21 @@ class AuthService {
       'lastName': userData['last_name']?.toString() ?? '',
       'first_name': userData['first_name']?.toString() ?? '',
       'last_name': userData['last_name']?.toString() ?? '',
+      'role': userData['role']?.toString() ?? 'user',
+      'has_password': userData['has_password'] != false,
     };
 
     await _mergeLocalUserData(backendUserData, preserveOnlyIfSameUser: true);
+  }
+
+  /// Vuelve a leer la cuenta del servidor (rol, si tiene contraseña…).
+  static Future<void> refreshAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
+    if (token.isEmpty) return;
+    try {
+      await _saveCurrentUser(token);
+    } catch (_) {}
   }
 
   static Future<void> _mergeLocalUserData(

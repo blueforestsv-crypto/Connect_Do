@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/media/media_viewer_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
@@ -336,36 +337,36 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           );
         }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Row(
-            children: [
-              option(
-                PhosphorIconsFill.image,
-                Brand.blue,
-                'Galería',
-                () => _pickImage(ImageSource.gallery),
-              ),
-              if (!kIsWeb)
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+            child: Row(
+              children: [
                 option(
-                  PhosphorIconsFill.camera,
-                  Brand.green,
-                  'Cámara',
-                  () => _pickImage(ImageSource.camera),
+                  PhosphorIconsFill.image,
+                  Brand.blue,
+                  'Galería',
+                  () => _pickImage(ImageSource.gallery),
                 ),
-              option(
-                PhosphorIconsFill.videoCamera,
-                const Color(0xFF8B5CF6),
-                'Video',
-                _pickVideo,
-              ),
-            ],
+                if (!kIsWeb)
+                  option(
+                    PhosphorIconsFill.camera,
+                    Brand.green,
+                    'Cámara',
+                    () => _pickImage(ImageSource.camera),
+                  ),
+                option(
+                  PhosphorIconsFill.videoCamera,
+                  const Color(0xFF8B5CF6),
+                  'Video',
+                  _pickVideo,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -533,58 +534,58 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final palette = AuthPalette.of(sheetContext);
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StickerImage(url: url, size: 110),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(
-                  PhosphorIconsRegular.heart,
-                  color: Brand.blue,
-                ),
-                title: Text(
-                  'Agregar a mis stickers',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontWeight: FontWeight.w600,
-                    color: palette.title,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                StickerImage(url: url, size: 110),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.heart,
+                    color: Brand.blue,
                   ),
+                  title: Text(
+                    'Agregar a mis stickers',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w600,
+                      color: palette.title,
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    try {
+                      await StickerService.save(
+                        url: url,
+                        width: message.width,
+                        height: message.height,
+                      );
+                      if (mounted) {
+                        showAuthMessage(
+                          context,
+                          'Sticker guardado',
+                          type: AuthMessageType.success,
+                        );
+                      }
+                    } catch (error) {
+                      if (mounted) {
+                        showAuthMessage(
+                          context,
+                          error.toString().replaceFirst('Exception: ', ''),
+                        );
+                      }
+                    }
+                  },
                 ),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  try {
-                    await StickerService.save(
-                      url: url,
-                      width: message.width,
-                      height: message.height,
-                    );
-                    if (mounted) {
-                      showAuthMessage(
-                        context,
-                        'Sticker guardado',
-                        type: AuthMessageType.success,
-                      );
-                    }
-                  } catch (error) {
-                    if (mounted) {
-                      showAuthMessage(
-                        context,
-                        error.toString().replaceFirst('Exception: ', ''),
-                      );
-                    }
-                  }
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -614,54 +615,54 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       builder: (sheetContext) {
         final palette = AuthPalette.of(sheetContext);
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(
-                  PhosphorIconsRegular.arrowClockwise,
-                  color: Brand.blue,
-                ),
-                title: Text(
-                  'Reintentar',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontWeight: FontWeight.w600,
-                    color: palette.title,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.arrowClockwise,
+                    color: Brand.blue,
                   ),
+                  title: Text(
+                    'Reintentar',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w600,
+                      color: palette.title,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _send(message);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _send(message);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  PhosphorIconsRegular.trash,
-                  color: Brand.danger,
-                ),
-                title: const Text(
-                  'Descartar',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontWeight: FontWeight.w600,
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.trash,
                     color: Brand.danger,
                   ),
+                  title: const Text(
+                    'Descartar',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w600,
+                      color: Brand.danger,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    setState(() => _pending.remove(message));
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  setState(() => _pending.remove(message));
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -710,6 +711,42 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
             ),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Más opciones',
+            icon: Icon(
+              PhosphorIconsRegular.dotsThreeVertical,
+              color: palette.title,
+            ),
+            onSelected: (value) async {
+              if (value == 'report') {
+                showReportSheet(
+                  context,
+                  targetType: 'user',
+                  targetId: widget.chatId,
+                );
+              } else if (value == 'block') {
+                final blocked = await confirmBlock(
+                  context,
+                  userId: widget.chatId,
+                  name: widget.chatName,
+                );
+                if (blocked && context.mounted) Navigator.pop(context);
+              }
+            },
+            itemBuilder:
+                (_) => const [
+                  PopupMenuItem(value: 'report', child: Text('Reportar')),
+                  PopupMenuItem(
+                    value: 'block',
+                    child: Text(
+                      'Bloquear',
+                      style: TextStyle(color: Brand.danger),
+                    ),
+                  ),
+                ],
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -755,6 +792,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                               onMediaTap: () => _openMedia(message),
                               onStickerLongPress:
                                   () => _stickerOptions(message),
+                              onReport:
+                                  message.isMe || message.id.startsWith('local')
+                                      ? null
+                                      : () => showReportSheet(
+                                        context,
+                                        targetType: 'message',
+                                        targetId: message.id,
+                                      ),
                               onFailedTap:
                                   message.status == MessageStatus.failed
                                       ? () => _showFailedOptions(message)
@@ -1096,6 +1141,7 @@ class _Bubble extends StatelessWidget {
   final VoidCallback? onFailedTap;
   final VoidCallback? onMediaTap;
   final VoidCallback? onStickerLongPress;
+  final VoidCallback? onReport;
 
   const _Bubble({
     required this.message,
@@ -1103,6 +1149,7 @@ class _Bubble extends StatelessWidget {
     this.onFailedTap,
     this.onMediaTap,
     this.onStickerLongPress,
+    this.onReport,
   });
 
   /// Sticker: grande y sin burbuja, con la hora debajo.
@@ -1338,6 +1385,7 @@ class _Bubble extends StatelessWidget {
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: GestureDetector(
           onTap: onFailedTap,
+          onLongPress: onReport,
           child: ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.78,

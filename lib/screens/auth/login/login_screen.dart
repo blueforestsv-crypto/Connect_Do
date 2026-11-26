@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/widgets/auth/terms_widgets.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/screens/account/forgot_password_screen.dart';
 import 'package:connect_do/screens/main_content/home/home_screen.dart';
@@ -461,6 +462,7 @@ class _LoginScreenState extends State<LoginScreen> {
             enabled: !_isLoading,
             onLoadingChanged: (v) => setState(() => _isGoogleLoading = v),
           ),
+          const GoogleTermsNote(),
           const AuthDivider(text: 'o con tu correo'),
           AuthTextField(
             controller: _userController,

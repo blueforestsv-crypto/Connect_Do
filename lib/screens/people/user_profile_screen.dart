@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/people/user_posts_screen.dart';
 import 'package:connect_do/services/contact_service.dart';
@@ -133,7 +134,47 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
     return Scaffold(
       backgroundColor: palette.background,
-      appBar: brandAppBar(context, _profile == null ? 'Perfil' : _name),
+      appBar: brandAppBar(
+        context,
+        _profile == null ? 'Perfil' : _name,
+        actions: [
+          if (_profile != null && _profile!['is_me'] != true)
+            PopupMenuButton<String>(
+              tooltip: 'Más opciones',
+              icon: Icon(
+                PhosphorIconsRegular.dotsThreeVertical,
+                color: palette.title,
+              ),
+              onSelected: (value) async {
+                if (value == 'report') {
+                  showReportSheet(
+                    context,
+                    targetType: 'user',
+                    targetId: widget.userId,
+                  );
+                } else if (value == 'block') {
+                  final blocked = await confirmBlock(
+                    context,
+                    userId: widget.userId,
+                    name: _name,
+                  );
+                  if (blocked && context.mounted) Navigator.pop(context);
+                }
+              },
+              itemBuilder:
+                  (_) => const [
+                    PopupMenuItem(value: 'report', child: Text('Reportar')),
+                    PopupMenuItem(
+                      value: 'block',
+                      child: Text(
+                        'Bloquear',
+                        style: TextStyle(color: Brand.danger),
+                      ),
+                    ),
+                  ],
+            ),
+        ],
+      ),
       body:
           _profile == null
               ? (_error == null

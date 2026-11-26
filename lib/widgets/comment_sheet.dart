@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/comment_model.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/publication_api_service.dart';
@@ -178,7 +179,6 @@ class _CommentSheetState extends State<CommentSheet> {
   }
 
   void _showOptions(CommentModel comment) {
-    if (!comment.isMine && !comment.canDelete) return;
     HapticFeedback.selectionClick();
 
     showModalBottomSheet(
@@ -211,41 +211,52 @@ class _CommentSheetState extends State<CommentSheet> {
           );
         }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: palette.fieldBorder,
-                  borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: palette.fieldBorder,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-              ),
-              if (comment.isMine)
-                option(
-                  PhosphorIconsRegular.pencilSimple,
-                  'Editar comentario',
-                  palette.title,
-                  () => _startEditing(comment),
-                ),
-              if (comment.canDelete)
-                option(
-                  PhosphorIconsRegular.trash,
-                  'Eliminar comentario',
-                  Brand.danger,
-                  () => _delete(comment),
-                ),
-            ],
+                if (comment.isMine)
+                  option(
+                    PhosphorIconsRegular.pencilSimple,
+                    'Editar comentario',
+                    palette.title,
+                    () => _startEditing(comment),
+                  ),
+                if (comment.canDelete)
+                  option(
+                    PhosphorIconsRegular.trash,
+                    'Eliminar comentario',
+                    Brand.danger,
+                    () => _delete(comment),
+                  ),
+                if (!comment.isMine)
+                  option(
+                    PhosphorIconsRegular.flag,
+                    'Reportar comentario',
+                    palette.title,
+                    () => showReportSheet(
+                      context,
+                      targetType: 'comment',
+                      targetId: comment.id,
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -378,10 +389,9 @@ class _CommentSheetState extends State<CommentSheet> {
     final isPostAuthor =
         widget.post.authorId.isNotEmpty &&
         comment.authorId == widget.post.authorId;
-    final hasOptions = comment.isMine || comment.canDelete;
-
     return GestureDetector(
-      onLongPress: hasOptions ? () => _showOptions(comment) : null,
+      // Mantener presionado: editar/eliminar (míos) o reportar (de otros).
+      onLongPress: () => _showOptions(comment),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -478,7 +488,7 @@ class _CommentSheetState extends State<CommentSheet> {
                           color: palette.muted,
                         ),
                       ),
-                      if (hasOptions) ...[
+                      ...[
                         const SizedBox(width: 12),
                         GestureDetector(
                           onTap: () => _showOptions(comment),

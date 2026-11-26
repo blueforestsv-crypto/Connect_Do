@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/services/story_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -482,6 +483,23 @@ class _GroupPlayerState extends State<_GroupPlayer>
                         ),
                       ),
                     ),
+                    if (!widget.group.isMe)
+                      IconButton(
+                        tooltip: 'Reportar historia',
+                        onPressed: () async {
+                          _pause();
+                          await showReportSheet(
+                            context,
+                            targetType: 'story',
+                            targetId: story.id,
+                          );
+                          _resume();
+                        },
+                        icon: const Icon(
+                          PhosphorIconsRegular.flag,
+                          color: Colors.white,
+                        ),
+                      ),
                     if (widget.group.isMe)
                       IconButton(
                         tooltip: 'Borrar historia',

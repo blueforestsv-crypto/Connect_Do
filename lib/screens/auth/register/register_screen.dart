@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/auth/terms_widgets.dart';
 import 'package:connect_do/screens/auth/register/verification_screen.dart';
 import 'package:connect_do/services/auth_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -34,6 +35,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   /// Errores en línea por campo; se muestran después del primer intento.
   Map<String, String> _errors = {};
   bool _submitted = false;
+  bool _acceptedTerms = false;
 
   @override
   void dispose() {
@@ -77,6 +79,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       errors['password'] = 'Usa al menos $_minPasswordLength caracteres.';
     }
 
+    if (!_acceptedTerms) {
+      errors['terms'] = 'Debes aceptar para crear tu cuenta.';
+    }
+
     return errors;
   }
 
@@ -101,6 +107,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email: email,
         password: _passwordController.text,
         university: _detectedUniversity,
+        acceptTerms: _acceptedTerms,
       );
     } catch (e) {
       if (!mounted) return;
@@ -162,6 +169,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               enabled: !_isLoading,
               onLoadingChanged: (v) => setState(() => _isGoogleLoading = v),
             ),
+            const GoogleTermsNote(),
             const AuthDivider(text: 'o con tu correo'),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -226,7 +234,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
               enabled: !busy,
             ),
             PasswordStrength(password: _passwordController.text),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            TermsCheckbox(
+              value: _acceptedTerms,
+              enabled: !busy,
+              errorText: _errors['terms'],
+              onChanged: (value) {
+                setState(() => _acceptedTerms = value);
+                _revalidate();
+              },
+            ),
+            const SizedBox(height: 20),
             GradientButton(
               text: 'Crear cuenta',
               isLoading: _isLoading,

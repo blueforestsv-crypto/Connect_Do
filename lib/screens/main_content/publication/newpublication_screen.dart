@@ -265,32 +265,32 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
           );
         }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              option(
-                PhosphorIconsRegular.images,
-                'Fotos',
-                'Hasta $_maxImages en total',
-                _pickImages,
-              ),
-              option(
-                PhosphorIconsRegular.videoCamera,
-                'Video',
-                _hasVideo
-                    ? 'Solo un video por publicación'
-                    : 'Hasta $_maxVideoSeconds segundos',
-                _hasVideo ? null : _pickVideo,
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                option(
+                  PhosphorIconsRegular.images,
+                  'Fotos',
+                  'Hasta $_maxImages en total',
+                  _pickImages,
+                ),
+                option(
+                  PhosphorIconsRegular.videoCamera,
+                  'Video',
+                  _hasVideo
+                      ? 'Solo un video por publicación'
+                      : 'Hasta $_maxVideoSeconds segundos',
+                  _hasVideo ? null : _pickVideo,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -395,73 +395,75 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
       builder: (sheetContext) {
         final palette = AuthPalette.of(sheetContext);
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: palette.fieldBorder,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                child: Text(
-                  '¿Quién puede verla?',
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: palette.title,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: palette.fieldBorder,
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
-              ),
-              for (final option in _visibilities)
-                ListTile(
-                  leading: Icon(
-                    option.icon,
-                    color:
-                        option.value == _visibility ? Brand.blue : palette.body,
-                  ),
-                  title: Text(
-                    option.label,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  child: Text(
+                    '¿Quién puede verla?',
                     style: TextStyle(
                       fontFamily: Brand.displayFont,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                       color: palette.title,
                     ),
                   ),
-                  subtitle: Text(
-                    option.hint,
-                    style: TextStyle(
-                      fontFamily: Brand.displayFont,
-                      fontSize: 12.5,
-                      color: palette.muted,
-                    ),
-                  ),
-                  trailing:
-                      option.value == _visibility
-                          ? const Icon(
-                            PhosphorIconsFill.checkCircle,
-                            color: Brand.blue,
-                          )
-                          : null,
-                  onTap: () {
-                    setState(() => _visibility = option.value);
-                    Navigator.pop(sheetContext);
-                  },
                 ),
-            ],
+                for (final option in _visibilities)
+                  ListTile(
+                    leading: Icon(
+                      option.icon,
+                      color:
+                          option.value == _visibility
+                              ? Brand.blue
+                              : palette.body,
+                    ),
+                    title: Text(
+                      option.label,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontWeight: FontWeight.w600,
+                        color: palette.title,
+                      ),
+                    ),
+                    subtitle: Text(
+                      option.hint,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        color: palette.muted,
+                      ),
+                    ),
+                    trailing:
+                        option.value == _visibility
+                            ? const Icon(
+                              PhosphorIconsFill.checkCircle,
+                              color: Brand.blue,
+                            )
+                            : null,
+                    onTap: () {
+                      setState(() => _visibility = option.value);
+                      Navigator.pop(sheetContext);
+                    },
+                  ),
+              ],
+            ),
           ),
         );
       },

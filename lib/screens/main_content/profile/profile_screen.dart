@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+import 'package:connect_do/services/user_service.dart';
+import 'package:connect_do/screens/settings/delete_account_screen.dart';
+import 'package:connect_do/screens/settings/blocked_users_screen.dart';
+import 'package:connect_do/screens/admin/moderation_screen.dart';
+import 'package:connect_do/core/api/api_config.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/account/change_email_screen.dart';
 import 'package:connect_do/screens/account/change_password_screen.dart';
@@ -286,12 +292,27 @@ class _SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<_SettingsSheet> {
   bool _isDark = ThemeService.isDarkMode;
+  bool _isAdmin = false;
+
+  void _open(Widget screen) {
+    // Se toma el navegador antes de cerrar la hoja (su contexto se va).
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    navigator.push(MaterialPageRoute(builder: (_) => screen));
+  }
+
   bool? _isPrivate; // null mientras carga
   bool _savingPrivacy = false;
 
   @override
   void initState() {
     super.initState();
+    // Rol actualizado (para mostrar "Moderación" a los administradores).
+    AuthService.refreshAccount().then((_) => UserService.getUser()).then((
+      user,
+    ) {
+      if (mounted) setState(() => _isAdmin = user['role'] == 'admin');
+    });
     ProfileService.getMyProfile().then((profile) {
       if (mounted) {
         setState(() => _isPrivate = profile?['is_private'] == true);
@@ -419,12 +440,43 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                         ),
               ),
             ]),
+            _group(palette, 'Privacidad y seguridad', [
+              _SettingsTile(
+                icon: PhosphorIconsRegular.prohibit,
+                title: 'Personas bloqueadas',
+                onTap: () => _open(const BlockedUsersScreen()),
+              ),
+              _SettingsTile(
+                icon: PhosphorIconsRegular.fileText,
+                title: 'Términos y privacidad',
+                onTap: () {
+                  Navigator.pop(context);
+                  launchUrl(
+                    Uri.parse('${ApiConfig.baseUrl}/privacidad'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+              ),
+              if (_isAdmin)
+                _SettingsTile(
+                  icon: PhosphorIconsRegular.shieldCheck,
+                  title: 'Moderación',
+                  subtitle: 'Revisar reportes',
+                  onTap: () => _open(const ModerationScreen()),
+                ),
+            ]),
             _group(palette, null, [
               _SettingsTile(
                 icon: PhosphorIconsRegular.signOut,
                 title: 'Cerrar sesión',
                 danger: true,
                 onTap: widget.onLogout,
+              ),
+              _SettingsTile(
+                icon: PhosphorIconsRegular.trash,
+                title: 'Eliminar mi cuenta',
+                danger: true,
+                onTap: () => _open(const DeleteAccountScreen()),
               ),
             ]),
           ],

@@ -209,37 +209,37 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           );
         }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(0, 12, 0, 20),
-          decoration: BoxDecoration(
-            color: palette.card,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(Brand.radiusLg),
-            ),
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: palette.fieldBorder,
-                  borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: palette.fieldBorder,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              option(
-                PhosphorIconsRegular.camera,
-                'Tomar una foto',
-                ImageSource.camera,
-              ),
-              option(
-                PhosphorIconsRegular.image,
-                'Elegir de la galería',
-                ImageSource.gallery,
-              ),
-            ],
+                const SizedBox(height: 12),
+                option(
+                  PhosphorIconsRegular.camera,
+                  'Tomar una foto',
+                  ImageSource.camera,
+                ),
+                option(
+                  PhosphorIconsRegular.image,
+                  'Elegir de la galería',
+                  ImageSource.gallery,
+                ),
+              ],
+            ),
           ),
         );
       },
