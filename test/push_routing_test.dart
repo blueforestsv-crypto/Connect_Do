@@ -4,6 +4,7 @@ import 'package:connect_do/core/firebase/firebase_config.dart';
 import 'package:connect_do/screens/applications/my_applications_screen.dart';
 import 'package:connect_do/screens/applications/received_applications_screen.dart';
 import 'package:connect_do/screens/main_content/chats/chatlist_screen.dart';
+import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/main_content/home/publication_detail_screen.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
 import 'package:connect_do/services/push_service.dart';
@@ -20,6 +21,15 @@ void main() {
     expect(
       PushService.destinationFor({'type': 'message'}),
       isA<ChatListScreen>(),
+    );
+    // Con quién escribió: abre directo su conversación.
+    expect(
+      PushService.destinationFor({
+        'type': 'message',
+        'related_user_id': 'ana',
+        'sender_name': 'Ana López',
+      }),
+      isA<IndividualChatScreen>(),
     );
     expect(
       PushService.destinationFor({'type': 'application_new'}),

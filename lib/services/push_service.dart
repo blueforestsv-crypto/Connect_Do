@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/core/api/api_config.dart';
 import 'package:connect_do/core/firebase/firebase_config.dart';
 import 'package:connect_do/screens/applications/my_applications_screen.dart';
@@ -136,6 +137,11 @@ class PushService {
   // =====================================================
   static void _showInApp(RemoteMessage message) {
     received.value++;
+    // Si ya estás en esa conversación, el mensaje aparece solo en el chat.
+    if (message.data['type'] == 'message' &&
+        message.data['related_user_id'] == IndividualChatScreen.openChatId) {
+      return;
+    }
     final context = navigatorKey.currentContext;
     final notification = message.notification;
     if (context == null || notification == null) return;
@@ -166,7 +172,14 @@ class PushService {
       'like' || 'comment' || 'publication' || 'opportunity' || 'share'
           when publicationId.isNotEmpty =>
         PublicationDetailScreen(publicationId: publicationId),
-      'message' => const ChatListScreen(),
+      // Abre directo la conversación con quien escribió.
+      'message' when (data['related_user_id']?.toString() ?? '').isNotEmpty =>
+        IndividualChatScreen(
+          chatId: data['related_user_id'].toString(),
+          chatName: data['sender_name']?.toString() ?? 'Chat',
+          chatAvatar: data['sender_photo']?.toString() ?? '',
+        ),
+      'message' || 'application_contact' => const ChatListScreen(),
       'contact_request' => const ContactsScreen(initialTabIndex: 2),
       'contact_accepted' => const ContactsScreen(initialTabIndex: 1),
       'application_new' => const ReceivedApplicationsScreen(),

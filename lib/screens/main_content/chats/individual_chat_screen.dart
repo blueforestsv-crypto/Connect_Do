@@ -26,6 +26,9 @@ import 'package:connect_do/widgets/media/media_gallery.dart';
 
 /// Conversación con un contacto. Se actualiza cada pocos segundos.
 class IndividualChatScreen extends StatefulWidget {
+  /// Id del contacto cuya conversación está abierta ahora (o null).
+  static String? get openChatId => _IndividualChatScreenState.openChatId;
+
   final String chatId;
   final String chatName;
   final String chatAvatar;
@@ -43,6 +46,9 @@ class IndividualChatScreen extends StatefulWidget {
 
 class _IndividualChatScreenState extends State<IndividualChatScreen>
     with WidgetsBindingObserver {
+  /// Conversación que está en pantalla (para no avisar de sus mensajes).
+  static String? openChatId;
+
   // Cada 5 s se piden solo los mensajes nuevos (casi 0 datos si no hay).
   // Cada 6 vueltas (30 s) se refresca la lista completa, sin fotos de
   // perfil, para actualizar los "visto" (✓✓).
@@ -81,6 +87,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     super.initState();
     _input.addListener(() => setState(() {}));
     WidgetsBinding.instance.addObserver(this);
+    openChatId = widget.chatId;
     _start();
   }
 
@@ -104,6 +111,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (openChatId == widget.chatId) openChatId = null;
     _pollTimer?.cancel();
     _recordTimer?.cancel();
     _recorder.dispose();

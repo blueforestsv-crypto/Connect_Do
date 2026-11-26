@@ -86,12 +86,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         PublicationDetailScreen(publicationId: notification.publicationId!),
       'contact_request' => const ContactsScreen(initialTabIndex: 2),
       'contact_accepted' => const ContactsScreen(initialTabIndex: 1),
-      'message' when notification.actorId.isNotEmpty => IndividualChatScreen(
-        chatId: notification.actorId,
-        chatName:
-            notification.actorName.isEmpty ? 'Chat' : notification.actorName,
-        chatAvatar: notification.actorPhoto,
-      ),
+      'message' || 'application_contact' when notification.actorId.isNotEmpty =>
+        IndividualChatScreen(
+          chatId: notification.actorId,
+          chatName:
+              notification.actorName.isEmpty ? 'Chat' : notification.actorName,
+          chatAvatar: notification.actorPhoto,
+        ),
       'message' => const ChatListScreen(),
       'application_new' => const ReceivedApplicationsScreen(),
       'application_status' => const MyApplicationsScreen(),
@@ -227,7 +228,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   return switch (type) {
     'like' => (PhosphorIconsFill.heart, const Color(0xFFEF4444)),
     'comment' => (PhosphorIconsFill.chatCircle, Brand.blue),
-    'message' => (PhosphorIconsFill.chatTeardropText, Brand.blue),
+    'message' ||
+    'application_contact' => (PhosphorIconsFill.chatTeardropText, Brand.blue),
     'contact_request' => (PhosphorIconsFill.userPlus, Brand.green),
     'contact_accepted' => (PhosphorIconsFill.handshake, Brand.green),
     'opportunity' => (PhosphorIconsFill.briefcase, const Color(0xFF8B5CF6)),
