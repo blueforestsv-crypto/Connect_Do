@@ -26,6 +26,15 @@ void main() {
       expect(poster, endsWith('/b.jpg'));
     });
 
+    test('las notas de voz se piden en MP3', () {
+      const note =
+          'https://res.cloudinary.com/connectdo/video/upload/v1/connect_do/chat/u/n.mp4';
+      expect(
+        CloudinaryUrl.audio(note),
+        'https://res.cloudinary.com/connectdo/video/upload/v1/connect_do/chat/u/n.mp3',
+      );
+    });
+
     test('no toca enlaces que no son de Cloudinary', () {
       const google = 'https://lh3.googleusercontent.com/foto';
       expect(CloudinaryUrl.image(google), google);

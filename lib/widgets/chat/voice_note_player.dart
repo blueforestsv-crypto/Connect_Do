@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/media/media_gallery.dart';
 
@@ -68,7 +69,7 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
           setState(() => _isPlaying = player.playing);
         }),
       );
-    final total = await player.setUrl(widget.url);
+    final total = await player.setUrl(CloudinaryUrl.audio(widget.url));
     if (mounted) setState(() => _total = total);
     return player;
   }
@@ -88,12 +89,25 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
       _playing = this;
       if (mounted) setState(() => _loading = false);
       await player.play();
-    } catch (_) {
+    } catch (error) {
+      debugPrint('No se pudo reproducir la nota de voz: $error');
+      // Se descarta el reproductor para poder reintentar con otro toque.
+      await _player?.dispose();
+      _player = null;
+      for (final sub in _subs) {
+        sub.cancel();
+      }
+      _subs.clear();
       if (mounted) {
         setState(() {
           _loading = false;
           _failed = true;
         });
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo reproducir la nota de voz.'),
+          ),
+        );
       }
     }
   }
@@ -121,7 +135,10 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: _failed ? null : _toggle,
+            onTap: () {
+              if (_failed) setState(() => _failed = false);
+              _toggle();
+            },
             child: Container(
               width: 38,
               height: 38,

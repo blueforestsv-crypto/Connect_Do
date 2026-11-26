@@ -29,6 +29,14 @@ class CloudinaryUrl {
   /// Video comprimido para el teléfono.
   static String video(String url) => transform(url, 'q_auto,w_1080,c_limit');
 
+  /// Nota de voz convertida a MP3 por Cloudinary: la reproduce cualquier
+  /// teléfono (la grabación original viene en un contenedor MP4) y pesa
+  /// menos.
+  static String audio(String url) {
+    if (!isCloudinary(url)) return url;
+    return url.replaceFirst(RegExp(r'\.\w+$'), '.mp3');
+  }
+
   /// Primer cuadro de un video como imagen (portada).
   static String videoPoster(String url, {int width = 900}) {
     if (!isCloudinary(url)) return url;

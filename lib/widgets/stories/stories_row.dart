@@ -37,10 +37,11 @@ class StoriesRowState extends State<StoriesRow> {
             .trim();
     setState(() {
       _myName = name.isEmpty ? 'Tú' : name;
+      final saved = user['profile_image_base64']?.toString().trim() ?? '';
       _myPhoto =
-          user['profile_image_base64']?.toString() ??
-          user['google_photo_url']?.toString() ??
-          '';
+          saved.isNotEmpty && saved != 'null'
+              ? saved
+              : user['google_photo_url']?.toString() ?? '';
     });
   }
 
