@@ -1,17 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/error_reporter.dart';
 import 'package:connect_do/services/voice_note_cache.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/media/media_gallery.dart';
 
 /// Nota de voz dentro de una burbuja del chat.
+///
+/// Usa el reproductor nativo del teléfono (MediaPlayer en Android) y no
+/// ExoPlayer: la app trae otra versión de ExoPlayer para los videos y,
+/// mezcladas, las notas fallaban con "código 2" (error interno).
 class VoiceNotePlayer extends StatefulWidget {
   final String url;
   final double? duration;
@@ -44,12 +49,18 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
 
   @override
   void dispose() {
+    _release();
+    if (_playing == this) _playing = null;
+    super.dispose();
+  }
+
+  void _release() {
     for (final sub in _subs) {
       sub.cancel();
     }
+    _subs.clear();
     _player?.dispose();
-    if (_playing == this) _playing = null;
-    super.dispose();
+    _player = null;
   }
 
   Future<AudioPlayer> _ensurePlayer() async {
@@ -58,35 +69,48 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
     _player = player;
     _subs
       ..add(
-        player.positionStream.listen((p) {
+        player.onPositionChanged.listen((p) {
           if (mounted) setState(() => _position = p);
         }),
       )
       ..add(
-        player.playerStateStream.listen((state) {
-          if (!mounted) return;
-          if (state.processingState == ProcessingState.completed) {
-            player.pause();
-            player.seek(Duration.zero);
+        player.onDurationChanged.listen((d) {
+          if (mounted && d > Duration.zero) setState(() => _total = d);
+        }),
+      )
+      ..add(
+        player.onPlayerStateChanged.listen((state) {
+          if (mounted) {
+            setState(() => _isPlaying = state == PlayerState.playing);
           }
-          setState(() => _isPlaying = player.playing);
+        }),
+      )
+      ..add(
+        player.onPlayerComplete.listen((_) {
+          if (!mounted) return;
+          setState(() {
+            _isPlaying = false;
+            _position = Duration.zero;
+          });
         }),
       );
-    final total = await _load(player);
-    if (mounted) setState(() => _total = total);
+    await _load(player);
     return player;
   }
 
   /// Se descarga la nota y se reproduce desde el teléfono. Primero el MP3;
   /// si ese no abre, el archivo original.
-  Future<Duration?> _load(AudioPlayer player) async {
-    if (kIsWeb) return player.setUrl(CloudinaryUrl.audio(widget.url));
-
+  Future<void> _load(AudioPlayer player) async {
+    if (kIsWeb) {
+      await player.setSource(UrlSource(CloudinaryUrl.audio(widget.url)));
+      return;
+    }
     Object? lastError;
     for (final url in VoiceNoteCache.candidates(widget.url)) {
       try {
         final path = await VoiceNoteCache.localFile(url);
-        return await player.setFilePath(path);
+        await player.setSource(DeviceFileSource(path));
+        return;
       } catch (error) {
         debugPrint('Nota de voz: no abrió $url → $error');
         lastError = error;
@@ -97,11 +121,10 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
 
   /// Texto corto del error, para poder diagnosticarlo si vuelve a pasar.
   static String _errorDetail(Object error) {
-    if (error is PlayerException) return 'código ${error.code}';
     if (error is HttpException) return error.message;
     if (error is TimeoutException) return 'sin conexión';
-    final text = error.runtimeType.toString();
-    return text.length > 30 ? text.substring(0, 30) : text;
+    final text = error.toString();
+    return text.length > 60 ? text.substring(0, 60) : text;
   }
 
   Future<void> _toggle() async {
@@ -118,16 +141,13 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
       }
       _playing = this;
       if (mounted) setState(() => _loading = false);
-      await player.play();
-    } catch (error) {
+      await player.resume();
+    } catch (error, stack) {
       debugPrint('No se pudo reproducir la nota de voz: $error');
+      // Llega a "Errores de la app" para saber qué pasó en ese teléfono.
+      ErrorReporter.report('Nota de voz (${widget.url}): $error', stack);
       // Se descarta el reproductor para poder reintentar con otro toque.
-      await _player?.dispose();
-      _player = null;
-      for (final sub in _subs) {
-        sub.cancel();
-      }
-      _subs.clear();
+      _release();
       if (mounted) {
         setState(() {
           _loading = false;

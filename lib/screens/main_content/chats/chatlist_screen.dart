@@ -904,6 +904,8 @@ String messagePreviewText(String rawContent, dynamic attachment) {
     'video' => '🎥 Video',
     'audio' => '🎤 Nota de voz',
     'sticker' => '💟 Sticker',
+    'file' => '📄 Documento',
+    'location' => '📍 Ubicación',
     _ => '',
   };
   return attachmentLabel.isEmpty

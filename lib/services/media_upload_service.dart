@@ -10,7 +10,7 @@ import 'package:connect_do/core/api/api_config.dart';
 /// Para qué se sube el archivo (define la carpeta y qué tipos se aceptan).
 enum MediaPurpose { post, avatar, chat, story, sticker }
 
-enum MediaKind { image, video, audio }
+enum MediaKind { image, video, audio, file }
 
 /// Archivo ya subido a Cloudinary.
 class UploadedMedia {
@@ -110,10 +110,10 @@ class MediaUploadService {
           )
           ..fields.addAll({
             'api_key': signed['api_key'].toString(),
-            'timestamp': signed['timestamp'].toString(),
             'signature': signed['signature'].toString(),
-            'folder': signed['folder'].toString(),
-            'allowed_formats': signed['allowed_formats'].toString(),
+            // Exactamente los campos firmados (los documentos no llevan
+            // allowed_formats). Servidor anterior: los de siempre.
+            ...signedFields(signed),
           })
           ..files.add(
             http.MultipartFile.fromBytes('file', bytes, filename: fileName),
@@ -153,6 +153,21 @@ class MediaUploadService {
       duration: (data['duration'] as num?)?.toDouble(),
     );
   }
+}
+
+/// Campos que entran en la firma de Cloudinary.
+Map<String, String> signedFields(Map<String, dynamic> signed) {
+  final fields = signed['signed_fields'];
+  if (fields is Map && fields.isNotEmpty) {
+    return {
+      for (final e in fields.entries) e.key.toString(): e.value.toString(),
+    };
+  }
+  return {
+    'timestamp': signed['timestamp'].toString(),
+    'folder': signed['folder'].toString(),
+    'allowed_formats': signed['allowed_formats'].toString(),
+  };
 }
 
 /// MultipartRequest que avisa cuánto se ha enviado.

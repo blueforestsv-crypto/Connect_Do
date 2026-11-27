@@ -7,6 +7,10 @@
     <!-- Cámara -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Compartir ubicación en el chat (solo con la app abierta: no se pide
+         ubicación en segundo plano). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Android 13 o superior -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />

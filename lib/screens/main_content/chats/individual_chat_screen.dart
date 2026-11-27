@@ -5,11 +5,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/services/live_location_service.dart';
+import 'package:connect_do/widgets/chat/chat_attachments.dart';
 import 'package:connect_do/screens/main_content/chats/group_info_screen.dart';
 import 'package:connect_do/services/group_service.dart';
 import 'package:connect_do/services/realtime_service.dart';
@@ -252,6 +255,12 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
         final m = _find(e['message_id']?.toString());
         if (m == null) return;
         setState(() => m.reactions = ChatService.reactionsFrom(e['reactions']));
+      case 'location':
+        if (!_isMine(e)) return;
+        final m = _find(e['message_id']?.toString());
+        final a = e['attachment'];
+        if (m == null || a is! Map) return;
+        setState(() => m.applyLocation(Map<String, dynamic>.from(a)));
       case 'deleted':
         if (!_isMine(e)) return;
         final m = _find(e['message_id']?.toString());
@@ -521,7 +530,15 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
       // 2) El mensaje.
       final attachment =
-          pending.attachmentUrl == null
+          pending.attachmentType == 'location'
+              ? {
+                'type': 'location',
+                'lat': pending.lat,
+                'lng': pending.lng,
+                if (pending.liveMinutes != null)
+                  'live_minutes': pending.liveMinutes,
+              }
+              : pending.attachmentUrl == null
               ? null
               : {
                 'type': pending.attachmentType,
@@ -529,6 +546,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                 if (pending.width != null) 'width': pending.width,
                 if (pending.height != null) 'height': pending.height,
                 if (pending.duration != null) 'duration': pending.duration,
+                if (pending.fileName != null) 'name': pending.fileName,
+                if (pending.sizeBytes != null) 'size_bytes': pending.sizeBytes,
               };
       final created =
           widget.isGroup
@@ -558,6 +577,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           _messages.insert(0, sent);
         }
       });
+      // Ubicación en tiempo real: desde ahora se envía mi posición.
+      final until = sent.liveUntil;
+      if (sent.attachmentType == 'location' &&
+          until != null &&
+          until.isAfter(DateTime.now())) {
+        LiveLocationService.instance.start(
+          sent.id,
+          until,
+          isGroup: widget.isGroup,
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => pending.status = MessageStatus.failed);
@@ -629,26 +659,50 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                option(
-                  PhosphorIconsFill.image,
-                  Brand.blue,
-                  'Galería',
-                  () => _pickImage(ImageSource.gallery),
+                Row(
+                  children: [
+                    option(
+                      PhosphorIconsFill.image,
+                      Brand.blue,
+                      'Galería',
+                      () => _pickImage(ImageSource.gallery),
+                    ),
+                    if (!kIsWeb)
+                      option(
+                        PhosphorIconsFill.camera,
+                        Brand.green,
+                        'Cámara',
+                        () => _pickImage(ImageSource.camera),
+                      ),
+                    option(
+                      PhosphorIconsFill.videoCamera,
+                      const Color(0xFF8B5CF6),
+                      'Video',
+                      _pickVideo,
+                    ),
+                  ],
                 ),
-                if (!kIsWeb)
-                  option(
-                    PhosphorIconsFill.camera,
-                    Brand.green,
-                    'Cámara',
-                    () => _pickImage(ImageSource.camera),
-                  ),
-                option(
-                  PhosphorIconsFill.videoCamera,
-                  const Color(0xFF8B5CF6),
-                  'Video',
-                  _pickVideo,
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    option(
+                      PhosphorIconsFill.fileText,
+                      const Color(0xFFEA580C),
+                      'Documento',
+                      _pickDocument,
+                    ),
+                    if (!kIsWeb)
+                      option(
+                        PhosphorIconsFill.mapPin,
+                        const Color(0xFFDC2626),
+                        'Ubicación',
+                        _chooseLocation,
+                      ),
+                    const Expanded(child: SizedBox()),
+                  ],
                 ),
               ],
             ),
@@ -656,6 +710,138 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
         );
       },
     );
+  }
+
+  /// PDF, Word, Excel, PowerPoint, TXT, ZIP… (hasta 10 MB).
+  Future<void> _pickDocument() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: documentExtensions,
+        withData: true,
+      );
+      final file = result?.files.single;
+      final bytes = file?.bytes;
+      if (file == null || bytes == null) return;
+      if (bytes.length > 10 * 1024 * 1024) {
+        if (mounted) {
+          showAuthMessage(context, 'El documento no puede pesar más de 10 MB.');
+        }
+        return;
+      }
+      final caption = _input.text.trim();
+      _input.clear();
+      _enqueue(
+        ChatMessageModel(
+          id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+          text: caption,
+          createdAt: DateTime.now(),
+          isMe: true,
+          attachmentType: 'file',
+          localBytes: bytes,
+          localName: file.name,
+          fileName: file.name,
+          sizeBytes: bytes.length,
+        ),
+      );
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo abrir el documento.');
+    }
+  }
+
+  /// Ubicación actual o en tiempo real (15 min, 1 h u 8 h).
+  void _chooseLocation() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        Widget tile(
+          IconData icon,
+          String title,
+          String? subtitle,
+          int? minutes,
+        ) => ListTile(
+          leading: Icon(icon, color: Brand.blue),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontWeight: FontWeight.w600,
+              color: palette.title,
+            ),
+          ),
+          subtitle: subtitle == null ? null : Text(subtitle),
+          onTap: () {
+            Navigator.pop(sheetContext);
+            _sendLocation(liveMinutes: minutes);
+          },
+        );
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tile(
+                  PhosphorIconsRegular.mapPin,
+                  'Enviar mi ubicación actual',
+                  null,
+                  null,
+                ),
+                const Divider(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                  child: Text(
+                    'En tiempo real (se actualiza mientras tengas la app abierta)',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 12.5,
+                      color: palette.muted,
+                    ),
+                  ),
+                ),
+                tile(PhosphorIconsRegular.broadcast, '15 minutos', null, 15),
+                tile(PhosphorIconsRegular.broadcast, '1 hora', null, 60),
+                tile(PhosphorIconsRegular.broadcast, '8 horas', null, 480),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendLocation({int? liveMinutes}) async {
+    try {
+      final position = await LiveLocationService.current();
+      if (!mounted) return;
+      _enqueue(
+        ChatMessageModel(
+          id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+          text: '',
+          createdAt: DateTime.now(),
+          isMe: true,
+          attachmentType: 'location',
+          lat: position.latitude,
+          lng: position.longitude,
+          liveMinutes: liveMinutes,
+          liveUntil:
+              liveMinutes == null
+                  ? null
+                  : DateTime.now().add(Duration(minutes: liveMinutes)),
+        ),
+      );
+    } on LocationException catch (error) {
+      if (mounted) showAuthMessage(context, error.message);
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo obtener tu ubicación.');
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -1359,6 +1545,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                               onMediaTap: () => _openMedia(message),
                               onStickerLongPress:
                                   () => _messageActions(message),
+                              onStickerTap: () => _stickerOptions(message),
+                              isGroup: widget.isGroup,
                               onReport: () => _messageActions(message),
                               onFailedTap:
                                   message.status == MessageStatus.failed
@@ -1742,6 +1930,10 @@ class _Bubble extends StatelessWidget {
   final VoidCallback? onMediaTap;
   final VoidCallback? onStickerLongPress;
 
+  /// Tocar un sticker ajeno: guardarlo en mis stickers.
+  final VoidCallback? onStickerTap;
+  final bool isGroup;
+
   /// Mantener presionado: menú de acciones del mensaje.
   final VoidCallback? onReport;
 
@@ -1754,6 +1946,8 @@ class _Bubble extends StatelessWidget {
     this.onFailedTap,
     this.onMediaTap,
     this.onStickerLongPress,
+    this.onStickerTap,
+    this.isGroup = false,
     this.onReport,
   });
 
@@ -1814,7 +2008,7 @@ class _Bubble extends StatelessWidget {
       child: Align(
         alignment: m.isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: GestureDetector(
-          onTap: onFailedTap,
+          onTap: onFailedTap ?? (m.isMe ? null : onStickerTap),
           onLongPress: onStickerLongPress,
           child: Column(
             crossAxisAlignment:
@@ -2152,6 +2346,31 @@ class _Bubble extends StatelessWidget {
                     ),
                   if (message.hasVisual) _visual(palette),
                   if (message.attachmentType == 'audio') _audio(palette),
+                  if (message.attachmentType == 'file')
+                    FileBubble(
+                      name:
+                          message.fileName ?? message.localName ?? 'Documento',
+                      url: message.attachmentUrl,
+                      sizeBytes: message.sizeBytes,
+                      onDark: isMe,
+                      uploading:
+                          message.status == MessageStatus.sending &&
+                          message.attachmentUrl == null,
+                      progress: message.progress,
+                    ),
+                  if (message.attachmentType == 'location' &&
+                      message.lat != null &&
+                      message.lng != null)
+                    LocationBubble(
+                      messageId:
+                          message.id.startsWith('local') ? null : message.id,
+                      lat: message.lat!,
+                      lng: message.lng!,
+                      liveUntil: message.liveUntil,
+                      isMe: isMe,
+                      isGroup: isGroup,
+                      senderName: senderName ?? (isMe ? 'Tú' : otherName),
+                    ),
                   if (message.text.isNotEmpty)
                     Padding(
                       padding:
@@ -2246,6 +2465,18 @@ class ChatMessageModel {
   int? height;
   double? duration;
 
+  /// Documento: nombre y tamaño.
+  String? fileName;
+  int? sizeBytes;
+
+  /// Ubicación (y, si es en tiempo real, hasta cuándo se actualiza).
+  double? lat;
+  double? lng;
+  DateTime? liveUntil;
+
+  /// Solo al enviar: por cuántos minutos se comparte en tiempo real.
+  final int? liveMinutes;
+
   /// Mientras se envía: el archivo local y el avance de la subida.
   Uint8List? localBytes;
   final String? localName;
@@ -2265,6 +2496,12 @@ class ChatMessageModel {
     this.duration,
     this.localBytes,
     this.localName,
+    this.fileName,
+    this.sizeBytes,
+    this.lat,
+    this.lng,
+    this.liveUntil,
+    this.liveMinutes,
     this.senderId,
     this.senderName,
     this.kind = 'user',
@@ -2274,6 +2511,14 @@ class ChatMessageModel {
   }) : reactions = reactions ?? {};
 
   bool get isSystem => kind == 'system';
+
+  /// Nueva posición de una ubicación en tiempo real (o que terminó).
+  void applyLocation(Map<String, dynamic> a) {
+    lat = (a['lat'] as num?)?.toDouble() ?? lat;
+    lng = (a['lng'] as num?)?.toDouble() ?? lng;
+    final until = DateTime.tryParse(a['live_until']?.toString() ?? '');
+    if (until != null) liveUntil = until.toLocal();
+  }
 
   /// Para agrupar burbujas seguidas del mismo autor.
   String get senderKey => isMe ? 'me' : (senderId ?? 'other');
@@ -2340,6 +2585,14 @@ class ChatMessageModel {
       width: (attachment?['width'] as num?)?.toInt(),
       height: (attachment?['height'] as num?)?.toInt(),
       duration: (attachment?['duration'] as num?)?.toDouble(),
+      fileName: attachment?['name']?.toString(),
+      sizeBytes: (attachment?['size_bytes'] as num?)?.toInt(),
+      lat: (attachment?['lat'] as num?)?.toDouble(),
+      lng: (attachment?['lng'] as num?)?.toDouble(),
+      liveUntil:
+          DateTime.tryParse(
+            attachment?['live_until']?.toString() ?? '',
+          )?.toLocal(),
     );
   }
 }
@@ -2462,6 +2715,8 @@ class ReplyQuote {
       'video' => '🎥 Video',
       'audio' => '🎤 Nota de voz',
       'sticker' => '💟 Sticker',
+      'file' => '📄 Documento',
+      'location' => '📍 Ubicación',
       _ => 'Mensaje',
     };
   }
