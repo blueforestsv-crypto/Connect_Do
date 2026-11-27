@@ -71,9 +71,24 @@ class _PublicationCardState extends State<PublicationCard>
     super.dispose();
   }
 
+  /// Versión editada por el autor (se muestra sin recargar el feed).
+  PublicationModel? _edited;
+
+  void _onEdited(PublicationModel updated) {
+    setState(() => _edited = updated);
+    widget.onChanged?.call(updated);
+  }
+
+  @override
+  void didUpdateWidget(covariant PublicationCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) _edited = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final animation = _animation;
+    final post = _edited ?? widget.post;
 
     return FadeTransition(
       opacity: animation,
@@ -83,32 +98,34 @@ class _PublicationCardState extends State<PublicationCard>
           end: Offset.zero,
         ).animate(animation),
         child:
-            widget.post.isOpportunity
+            post.isOpportunity
                 ? OpportunityCard(
-                  post: widget.post,
+                  post: post,
                   onDelete: widget.onDelete,
                   onHide: widget.onHide,
                   onSavedChanged: widget.onSavedChanged,
                   onChanged: widget.onChanged,
+                  onEdited: _onEdited,
                 )
                 : FeedCardShell(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       PublicationHeader(
-                        post: widget.post,
+                        post: post,
                         onDelete: widget.onDelete,
                         onHide: widget.onHide,
+                        onEdited: _onEdited,
                       ),
                       const SizedBox(height: 12),
-                      PublicationContent(post: widget.post),
-                      if (widget.post.hasAnyMedia) ...[
+                      PublicationContent(post: post),
+                      if (post.hasAnyMedia) ...[
                         const SizedBox(height: 12),
-                        PublicationMedia(post: widget.post),
+                        PublicationMedia(post: post),
                       ],
                       const SizedBox(height: 12),
                       PublicationActions(
-                        post: widget.post,
+                        post: post,
                         onSavedChanged: widget.onSavedChanged,
                         onChanged: widget.onChanged,
                       ),

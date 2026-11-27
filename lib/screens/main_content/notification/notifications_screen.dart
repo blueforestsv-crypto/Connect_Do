@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/screens/people/user_profile_screen.dart';
 import 'package:connect_do/screens/settings/account_type_screen.dart';
 import 'package:connect_do/models/notification_model.dart';
 import 'package:connect_do/screens/applications/my_applications_screen.dart';
@@ -87,7 +88,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'publication' ||
       'opportunity' ||
       'share' ||
-      'job_alert' when notification.publicationId != null =>
+      'job_alert' ||
+      'mention' ||
+      'comment_reply' ||
+      'comment_like' when notification.publicationId != null =>
         PublicationDetailScreen(publicationId: notification.publicationId!),
       'contact_request' => const ContactsScreen(initialTabIndex: 2),
       'contact_accepted' => const ContactsScreen(initialTabIndex: 1),
@@ -101,6 +105,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'message' => const ChatListScreen(),
       'application_new' => const ReceivedApplicationsScreen(),
       'company_verification' => const AccountTypeScreen(),
+      'follow' || 'skill_endorsement' when notification.actorId.isNotEmpty =>
+        UserProfileScreen(userId: notification.actorId),
       'application_status' => const MyApplicationsScreen(),
       _ => null,
     };
@@ -241,6 +247,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'opportunity' => (PhosphorIconsFill.briefcase, const Color(0xFF8B5CF6)),
     'application_new' => (PhosphorIconsFill.tray, const Color(0xFF8B5CF6)),
     'job_alert' => (PhosphorIconsFill.bellRinging, const Color(0xFF8B5CF6)),
+    'follow' => (PhosphorIconsFill.userPlus, Brand.blue),
+    'mention' => (PhosphorIconsFill.at, Brand.blue),
+    'comment_reply' => (PhosphorIconsFill.arrowBendUpLeft, Brand.blue),
+    'comment_like' => (PhosphorIconsFill.heart, const Color(0xFFEF4444)),
     'skill_endorsement' => (PhosphorIconsFill.sealCheck, Brand.green),
     'company_verification' => (PhosphorIconsFill.sealCheck, Brand.blue),
     'application_status' => (

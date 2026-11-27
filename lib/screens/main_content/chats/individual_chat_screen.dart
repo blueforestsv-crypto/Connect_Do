@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/widgets/social/share_to_chat.dart';
+import 'package:connect_do/screens/main_content/home/publication_detail_screen.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/media/media_viewer_screen.dart';
@@ -1421,15 +1423,24 @@ class _Bubble extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         widthFactor: 1,
-                        child: Text(
-                          message.text,
-                          style: TextStyle(
-                            fontFamily: Brand.displayFont,
-                            fontSize: 15,
-                            height: 1.35,
-                            color: isMe ? Colors.white : palette.title,
-                          ),
-                        ),
+                        child:
+                            sharedPostPattern.hasMatch(message.text)
+                                ? _SharedPost(
+                                  match:
+                                      sharedPostPattern.firstMatch(
+                                        message.text,
+                                      )!,
+                                  onDark: isMe,
+                                )
+                                : Text(
+                                  message.text,
+                                  style: TextStyle(
+                                    fontFamily: Brand.displayFont,
+                                    fontSize: 15,
+                                    height: 1.35,
+                                    color: isMe ? Colors.white : palette.title,
+                                  ),
+                                ),
                       ),
                     ),
                   const SizedBox(height: 2),
@@ -1542,6 +1553,77 @@ class ChatMessageModel {
       width: (attachment?['width'] as num?)?.toInt(),
       height: (attachment?['height'] as num?)?.toInt(),
       duration: (attachment?['duration'] as num?)?.toDouble(),
+    );
+  }
+}
+
+/// Publicación compartida por chat: tarjeta que la abre.
+class _SharedPost extends StatelessWidget {
+  final RegExpMatch match;
+  final bool onDark;
+
+  const _SharedPost({required this.match, required this.onDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    final id = match.group(1)!;
+    final title = (match.group(2) ?? '').trim();
+    final fg = onDark ? Colors.white : palette.title;
+
+    return GestureDetector(
+      onTap:
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PublicationDetailScreen(publicationId: id),
+            ),
+          ),
+      child: Container(
+        width: 230,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color:
+              onDark
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : Brand.blue.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(PhosphorIconsFill.newspaper, color: fg, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Publicación compartida',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: fg.withValues(alpha: 0.75),
+                    ),
+                  ),
+                  Text(
+                    title.isEmpty ? 'Ver publicación' : title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(PhosphorIconsRegular.caretRight, color: fg, size: 16),
+          ],
+        ),
+      ),
     );
   }
 }

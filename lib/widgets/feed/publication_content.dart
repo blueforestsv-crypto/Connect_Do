@@ -45,7 +45,11 @@ class PublicationContent extends StatelessWidget {
           ),
         if (_hasDescription) ...[
           const SizedBox(height: 6),
-          ExpandableText(text: post.description, textColor: palette.label),
+          ExpandableText(
+            text: post.description,
+            textColor: palette.label,
+            mentions: post.mentions,
+          ),
         ],
         if (!_hasTitle && !_hasDescription && !post.hasAnyMedia)
           Text(

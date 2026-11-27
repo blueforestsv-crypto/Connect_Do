@@ -17,7 +17,15 @@ class CommentModel {
   /// El usuario actual puede borrarlo (es suyo o es el autor de la publicación).
   final bool canDelete;
 
-  const CommentModel({
+  /// Respuesta a otro comentario (id del original).
+  final String? parentId;
+  int likesCount;
+  bool likedByMe;
+
+  /// Personas mencionadas: [{id, name}].
+  final List<Map<String, String>> mentions;
+
+  CommentModel({
     required this.id,
     required this.publicationId,
     required this.authorId,
@@ -28,6 +36,10 @@ class CommentModel {
     required this.updatedAt,
     this.isMine = false,
     this.canDelete = false,
+    this.parentId,
+    this.likesCount = 0,
+    this.likedByMe = false,
+    this.mentions = const [],
   });
 
   bool get wasEdited => updatedAt.difference(createdAt).inSeconds > 2;
@@ -56,8 +68,22 @@ class CommentModel {
               : _parseDate(json['updated_at']),
       isMine: json['is_mine'] == true,
       canDelete: json['can_delete'] == true,
+      parentId: json['parent_id']?.toString(),
+      likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
+      likedByMe: json['liked_by_me'] == true,
+      mentions: parseMentions(json['mentions']),
     );
   }
+
+  static List<Map<String, String>> parseMentions(dynamic value) => [
+    if (value is List)
+      for (final item in value)
+        if (item is Map)
+          {
+            'id': item['id']?.toString() ?? '',
+            'name': item['name']?.toString() ?? '',
+          },
+  ];
 
   static DateTime _parseDate(dynamic value) {
     return DateTime.tryParse(value?.toString() ?? '')?.toLocal() ??

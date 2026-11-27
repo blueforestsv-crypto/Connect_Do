@@ -110,6 +110,9 @@ class PublicationModel {
   final bool savedByMe;
   final bool isMine;
 
+  /// Personas mencionadas con @: [{id, name}].
+  final List<Map<String, String>> mentions;
+
   /// El autor es una empresa (y si está verificada: insignia ✓).
   final bool authorIsCompany;
   final bool authorVerified;
@@ -138,6 +141,7 @@ class PublicationModel {
     this.isMine = false,
     this.authorIsCompany = false,
     this.authorVerified = false,
+    this.mentions = const [],
   });
 
   PublicationModel copyWith({
@@ -170,6 +174,7 @@ class PublicationModel {
       isMine: isMine,
       authorIsCompany: authorIsCompany,
       authorVerified: authorVerified,
+      mentions: mentions,
     );
   }
 
@@ -373,6 +378,15 @@ class PublicationModel {
       authorVerified:
           json['author'] is Map &&
           (json['author'] as Map)['company_verified'] == true,
+      mentions: [
+        if (json['mentions'] is List)
+          for (final m in json['mentions'] as List)
+            if (m is Map)
+              {
+                'id': m['id']?.toString() ?? '',
+                'name': m['name']?.toString() ?? '',
+              },
+      ],
     );
   }
 

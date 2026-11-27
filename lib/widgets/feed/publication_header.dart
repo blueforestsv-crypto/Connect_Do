@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/screens/main_content/publication/edit_publication_screen.dart';
 import 'package:connect_do/widgets/common/verified_badge.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
@@ -18,11 +19,15 @@ class PublicationHeader extends StatelessWidget {
   /// Ocultar del feed (solo se ofrece si no es del usuario actual).
   final VoidCallback? onHide;
 
+  /// Se llama con la publicación ya editada.
+  final ValueChanged<PublicationModel>? onEdited;
+
   const PublicationHeader({
     super.key,
     required this.post,
     this.onDelete,
     this.onHide,
+    this.onEdited,
   });
 
   IconData get _visibilityIcon {
@@ -37,6 +42,7 @@ class PublicationHeader extends StatelessWidget {
   }
 
   bool get _canDelete => post.isMine && onDelete != null;
+  bool get _canEdit => post.isMine && onEdited != null;
   bool get _canHide => !post.isMine && onHide != null;
   bool get _canReport => !post.isMine && post.id.isNotEmpty;
 
@@ -108,7 +114,7 @@ class PublicationHeader extends StatelessWidget {
             ),
           ),
         ),
-        if (_canDelete || _canHide || _canReport)
+        if (_canDelete || _canHide || _canReport || _canEdit)
           IconButton(
             tooltip: 'Opciones',
             onPressed: () => _showOptions(context),
@@ -199,6 +205,23 @@ class PublicationHeader extends StatelessWidget {
                         name: post.userName,
                       );
                       if (blocked) onHide?.call();
+                    },
+                  ),
+                if (_canEdit)
+                  _OptionTile(
+                    icon: PhosphorIconsRegular.pencilSimple,
+                    color: palette.label,
+                    title: 'Editar publicación',
+                    subtitle: 'Cambia el texto o quién la ve',
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final updated = await Navigator.push<PublicationModel>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EditPublicationScreen(post: post),
+                        ),
+                      );
+                      if (updated != null) onEdited?.call(updated);
                     },
                   ),
                 if (_canDelete)

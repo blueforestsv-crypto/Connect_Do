@@ -33,6 +33,7 @@ class OpportunityCard extends StatefulWidget {
   final VoidCallback? onHide;
   final VoidCallback? onSavedChanged;
   final ValueChanged<PublicationModel>? onChanged;
+  final ValueChanged<PublicationModel>? onEdited;
 
   const OpportunityCard({
     super.key,
@@ -41,6 +42,7 @@ class OpportunityCard extends StatefulWidget {
     this.onHide,
     this.onSavedChanged,
     this.onChanged,
+    this.onEdited,
   });
 
   @override
@@ -105,6 +107,7 @@ class _OpportunityCardState extends State<OpportunityCard> {
             post: post,
             onDelete: widget.onDelete,
             onHide: widget.onHide,
+            onEdited: widget.onEdited,
           ),
           const SizedBox(height: 14),
           _TypeBadge(icon: icon, color: color, label: post.typeLabel),
@@ -154,7 +157,11 @@ class _OpportunityCardState extends State<OpportunityCard> {
               ),
             ),
             const SizedBox(height: 6),
-            ExpandableText(text: post.description, textColor: palette.label),
+            ExpandableText(
+              text: post.description,
+              textColor: palette.label,
+              mentions: post.mentions,
+            ),
           ],
           if (post.hasAnyMedia) ...[
             const SizedBox(height: 14),

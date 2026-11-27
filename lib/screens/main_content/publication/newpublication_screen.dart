@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/social/mention_suggestions.dart';
 import 'package:connect_do/services/media_upload_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/services/user_service.dart';
@@ -71,6 +72,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final MentionTracker _mentions = MentionTracker();
   final _locationController = TextEditingController();
 
   String _type = 'general';
@@ -362,6 +364,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
         location: _needsTitle ? _locationController.text : null,
         modality: _isOpportunity ? _modality : null,
         mediaItems: mediaItems,
+        mentions: _mentions.idsIn(description),
       );
 
       if (!mounted) return;
@@ -381,6 +384,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   void _reset() {
     _titleController.clear();
     _descriptionController.clear();
+    _mentions.clear();
     _locationController.clear();
     setState(() {
       _type = 'general';
@@ -612,6 +616,11 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                     textInputAction: TextInputAction.newline,
                     errorText: _submitted ? _descriptionError : null,
                     enabled: !_isPublishing,
+                  ),
+                  // Escribe @ para mencionar a un contacto; # para un tema.
+                  MentionSuggestions(
+                    controller: _descriptionController,
+                    tracker: _mentions,
                   ),
                   if (_needsTitle) ...[
                     const SizedBox(height: 16),

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/widgets/social/highlights_row.dart';
+import 'package:connect_do/services/social_service.dart';
+import 'package:connect_do/screens/people/follow_list_screen.dart';
 import 'package:connect_do/widgets/profile/profile_entries_section.dart';
 import 'package:connect_do/widgets/common/verified_badge.dart';
 import 'package:connect_do/services/professional_service.dart';
@@ -108,6 +111,39 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       setState(() {
         skill.endorsedByMe = !endorse;
         skill.count += endorse ? -1 : 1;
+      });
+      showAuthMessage(
+        context,
+        error.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  void _openFollowList({required bool followers}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) =>
+                FollowListScreen(userId: widget.userId, followers: followers),
+      ),
+    );
+  }
+
+  Future<void> _toggleFollow() async {
+    final follow = _profile!['is_following'] != true;
+    final count = (_profile!['followers_count'] as num?)?.toInt() ?? 0;
+    setState(() {
+      _profile!['is_following'] = follow;
+      _profile!['followers_count'] = count + (follow ? 1 : -1);
+    });
+    try {
+      await SocialService.setFollowing(widget.userId, follow: follow);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _profile!['is_following'] = !follow;
+        _profile!['followers_count'] = count;
       });
       showAuthMessage(
         context,
@@ -369,7 +405,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
+              _FollowCounts(
+                followers: (_profile!['followers_count'] as num?)?.toInt() ?? 0,
+                following: (_profile!['following_count'] as num?)?.toInt() ?? 0,
+                followsMe: _profile!['follows_me'] == true && !isMe,
+                onFollowers: () => _openFollowList(followers: true),
+                onFollowing: () => _openFollowList(followers: false),
+              ),
+              const SizedBox(height: 14),
               if (isMe)
                 Text(
                   'Así ven tu perfil las demás personas.',
@@ -380,10 +424,41 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 )
               else
-                _buildActions(),
+                Row(
+                  children: [
+                    Expanded(child: _buildActions()),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 52,
+                      child:
+                          _profile!['is_following'] == true
+                              ? OutlinedButton(
+                                onPressed: _busy ? null : _toggleFollow,
+                                child: const Text('Siguiendo'),
+                              )
+                              : FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Brand.green,
+                                ),
+                                onPressed: _busy ? null : _toggleFollow,
+                                child: const Text('Seguir'),
+                              ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
+        if (!limited)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: HighlightsRow(
+              userId: widget.userId,
+              userName: _name,
+              userPhoto: _text('profile_image_base64'),
+              isMe: isMe,
+            ),
+          ),
         if (limited)
           Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -717,6 +792,84 @@ class _SkillRow extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// "12 seguidores · 30 siguiendo" (se pueden tocar).
+class _FollowCounts extends StatelessWidget {
+  final int followers;
+  final int following;
+  final bool followsMe;
+  final VoidCallback onFollowers;
+  final VoidCallback onFollowing;
+
+  const _FollowCounts({
+    required this.followers,
+    required this.following,
+    required this.followsMe,
+    required this.onFollowers,
+    required this.onFollowing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    Widget count(int value, String label, VoidCallback onTap) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '$value ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: palette.title,
+                  ),
+                ),
+                TextSpan(text: label),
+              ],
+            ),
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 13.5,
+              color: palette.muted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            count(
+              followers,
+              followers == 1 ? 'seguidor' : 'seguidores',
+              onFollowers,
+            ),
+            Text('·', style: TextStyle(color: palette.muted)),
+            count(following, 'siguiendo', onFollowing),
+          ],
+        ),
+        if (followsMe)
+          Text(
+            'Te sigue',
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: palette.muted,
+            ),
+          ),
+      ],
     );
   }
 }

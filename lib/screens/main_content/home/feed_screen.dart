@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/screens/explore/explore_screen.dart';
 import 'package:connect_do/screens/jobs/jobs_screen.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
@@ -27,6 +28,8 @@ class FeedScreen extends StatefulWidget {
 /// Filtros por tipo; el filtrado lo hace el servidor.
 const List<({String? type, String label, IconData icon})> _filters = [
   (type: null, label: 'Todo', icon: PhosphorIconsRegular.squaresFour),
+  // "Siguiendo" no es un tipo: muestra lo de quienes sigo.
+  (type: 'following', label: 'Siguiendo', icon: PhosphorIconsRegular.userCheck),
   (type: 'job', label: 'Empleos', icon: PhosphorIconsRegular.briefcase),
   (type: 'internship', label: 'Pasantías', icon: PhosphorIconsRegular.student),
   (
@@ -119,7 +122,8 @@ class FeedScreenState extends State<FeedScreen> {
 
     try {
       final page = await _api.getPublications(
-        type: _type,
+        type: _type == 'following' ? null : _type,
+        following: _type == 'following',
         query: _searchQuery,
         limit: _pageSize,
       );
@@ -147,7 +151,8 @@ class FeedScreenState extends State<FeedScreen> {
 
     try {
       final page = await _api.getPublications(
-        type: _type,
+        type: _type == 'following' ? null : _type,
+        following: _type == 'following',
         query: _searchQuery,
         limit: _pageSize,
         offset: _posts.length,
@@ -407,6 +412,33 @@ class FeedScreenState extends State<FeedScreen> {
         ],
       ),
       actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Material(
+            color: palette.card,
+            shape: CircleBorder(side: BorderSide(color: palette.cardBorder)),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExploreScreen()),
+                  ),
+              child: SizedBox(
+                width: 42,
+                height: 42,
+                child: Tooltip(
+                  message: 'Explorar',
+                  child: Icon(
+                    PhosphorIconsRegular.compass,
+                    size: 21,
+                    color: palette.title,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         // Buscador de empleos y pasantías.
         Padding(
           padding: const EdgeInsets.only(right: 8),

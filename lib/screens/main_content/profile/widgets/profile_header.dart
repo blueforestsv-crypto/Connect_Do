@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/social/highlights_row.dart';
+import 'package:connect_do/screens/people/follow_list_screen.dart';
 import 'package:connect_do/screens/people/profile_views_screen.dart';
 import 'package:connect_do/screens/jobs/jobs_screen.dart';
 import 'package:connect_do/helpers/profile_completion.dart';
@@ -39,6 +41,8 @@ class _ProfileHeaderState extends State<ProfileHeader> {
 
   Map<String, dynamic> _user = {};
   bool _isUploadingPhoto = false;
+  int? _followers;
+  int? _following;
 
   @override
   void initState() {
@@ -55,6 +59,22 @@ class _ProfileHeaderState extends State<ProfileHeader> {
   Future<void> _load() async {
     final user = await UserService.getUser();
     if (mounted) setState(() => _user = user);
+    final id = user['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    try {
+      final me = await ProfileService.getPublicProfile(id);
+      if (!mounted) return;
+      setState(() {
+        _followers = (me['followers_count'] as num?)?.toInt();
+        _following = (me['following_count'] as num?)?.toInt();
+      });
+    } catch (_) {}
+  }
+
+  void _openFollows({required bool followers}) {
+    final id = _str('id');
+    if (id.isEmpty) return;
+    _push(FollowListScreen(userId: id, followers: followers));
   }
 
   String _str(String key) => _user[key]?.toString().trim() ?? '';
@@ -257,6 +277,35 @@ class _ProfileHeaderState extends State<ProfileHeader> {
                   const SizedBox(height: 16),
                   _CompletionBar(percent: percent, onTap: widget.onEditProfile),
                 ],
+                if (_followers != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _Count(
+                        value: _followers!,
+                        label: _followers == 1 ? 'seguidor' : 'seguidores',
+                        onTap: () => _openFollows(followers: true),
+                      ),
+                      const SizedBox(width: 18),
+                      _Count(
+                        value: _following ?? 0,
+                        label: 'siguiendo',
+                        onTap: () => _openFollows(followers: false),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_str('id').isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: HighlightsRow(
+                      key: ValueKey('highlights-${widget.refreshKey}'),
+                      userId: _str('id'),
+                      userName: _name,
+                      userPhoto: _photo,
+                      isMe: true,
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 OutlineActionButton(
                   text: 'Editar perfil',
@@ -526,6 +575,41 @@ class _QuickLink extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Count extends StatelessWidget {
+  final int value;
+  final String label;
+  final VoidCallback onTap;
+
+  const _Count({required this.value, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$value ',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: palette.title,
+              ),
+            ),
+            TextSpan(text: label),
+          ],
+        ),
+        style: TextStyle(
+          fontFamily: Brand.displayFont,
+          fontSize: 14,
+          color: palette.muted,
         ),
       ),
     );

@@ -174,7 +174,10 @@ class PushService {
       'publication' ||
       'opportunity' ||
       'share' ||
-      'job_alert' when publicationId.isNotEmpty => PublicationDetailScreen(
+      'job_alert' ||
+      'mention' ||
+      'comment_reply' ||
+      'comment_like' when publicationId.isNotEmpty => PublicationDetailScreen(
         publicationId: publicationId,
       ),
       // Abre directo la conversación con quien escribió.

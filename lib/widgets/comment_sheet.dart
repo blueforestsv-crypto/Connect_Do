@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/social/mention_suggestions.dart';
+import 'package:connect_do/widgets/feed/expandable_text.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/comment_model.dart';
 import 'package:connect_do/models/publication_model.dart';
@@ -39,6 +41,26 @@ class _CommentSheetState extends State<CommentSheet> {
 
   /// Comentario que se está editando (el texto va en el mismo campo).
   CommentModel? _editing;
+
+  /// Comentario al que se está respondiendo.
+  CommentModel? _replyTo;
+  final MentionTracker _mentions = MentionTracker();
+
+  /// Comentarios originales, cada uno seguido de sus respuestas.
+  List<CommentModel> get _threaded {
+    final roots = _comments.where((c) => c.parentId == null).toList();
+    final ids = roots.map((c) => c.id).toSet();
+    return [
+      for (final root in roots) ...[
+        root,
+        ..._comments.where((c) => c.parentId == root.id),
+      ],
+      // Respuestas cuyo original ya no está (p. ej. se borró).
+      ..._comments.where(
+        (c) => c.parentId != null && !ids.contains(c.parentId),
+      ),
+    ];
+  }
 
   String _myName = 'Tú';
   String _myPhoto = '';
@@ -121,10 +143,19 @@ class _CommentSheetState extends State<CommentSheet> {
           _editing = null;
         });
       } else {
-        final created = await _api.addComment(widget.post.id, text);
+        final created = await _api.addComment(
+          widget.post.id,
+          text,
+          parentId: _replyTo?.parentId ?? _replyTo?.id,
+          mentions: _mentions.idsIn(text),
+        );
         if (!mounted) return;
         HapticFeedback.lightImpact();
-        setState(() => _comments.add(created));
+        setState(() {
+          _comments.add(created);
+          _replyTo = null;
+        });
+        _mentions.clear();
         widget.onCountChanged?.call(_comments.length);
         _scrollToEnd();
       }
@@ -159,6 +190,51 @@ class _CommentSheetState extends State<CommentSheet> {
   void _cancelEditing() {
     setState(() => _editing = null);
     _input.clear();
+  }
+
+  void _startReply(CommentModel comment) {
+    setState(() {
+      _editing = null;
+      _replyTo = comment;
+    });
+    // Se menciona a quien se responde (si no es uno mismo).
+    if (!comment.isMine) {
+      _mentions.add(comment.authorId, comment.authorName);
+      final prefix = '@${comment.authorName} ';
+      _input
+        ..text = prefix
+        ..selection = TextSelection.collapsed(offset: prefix.length);
+    }
+    _inputFocus.requestFocus();
+  }
+
+  Future<void> _toggleLike(CommentModel comment) async {
+    final liked = !comment.likedByMe;
+    HapticFeedback.selectionClick();
+    setState(() {
+      comment.likedByMe = liked;
+      comment.likesCount += liked ? 1 : -1;
+    });
+    try {
+      final result = await _api.setCommentLiked(
+        widget.post.id,
+        comment.id,
+        liked: liked,
+      );
+      if (mounted) {
+        setState(() {
+          comment.likedByMe = result.liked;
+          comment.likesCount = result.likesCount;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          comment.likedByMe = !liked;
+          comment.likesCount += liked ? -1 : 1;
+        });
+      }
+    }
   }
 
   Future<void> _delete(CommentModel comment) async {
@@ -379,9 +455,9 @@ class _CommentSheetState extends State<CommentSheet> {
       controller: _scroll,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      itemCount: _comments.length,
+      itemCount: _threaded.length,
       separatorBuilder: (_, __) => const SizedBox(height: 14),
-      itemBuilder: (context, index) => _buildComment(_comments[index], palette),
+      itemBuilder: (context, index) => _buildComment(_threaded[index], palette),
     );
   }
 
@@ -389,111 +465,145 @@ class _CommentSheetState extends State<CommentSheet> {
     final isPostAuthor =
         widget.post.authorId.isNotEmpty &&
         comment.authorId == widget.post.authorId;
+    final isReply = comment.parentId != null;
     return GestureDetector(
       // Mantener presionado: editar/eliminar (míos) o reportar (de otros).
       onLongPress: () => _showOptions(comment),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          UserAvatar(
-            name: comment.authorName,
-            photo: comment.authorPhoto,
-            radius: 17,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                  decoration: BoxDecoration(
-                    color:
-                        _editing?.id == comment.id
-                            ? Brand.blue.withValues(alpha: 0.08)
-                            : palette.fieldFill,
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
-                      bottomRight: Radius.circular(16),
-                      topLeft: Radius.circular(4),
+      child: Padding(
+        padding: EdgeInsets.only(left: isReply ? 44 : 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            UserAvatar(
+              name: comment.authorName,
+              photo: comment.authorPhoto,
+              radius: isReply ? 14 : 17,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                    decoration: BoxDecoration(
+                      color:
+                          _editing?.id == comment.id
+                              ? Brand.blue.withValues(alpha: 0.08)
+                              : palette.fieldFill,
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(16),
+                        bottomLeft: Radius.circular(16),
+                        bottomRight: Radius.circular(16),
+                        topLeft: Radius.circular(4),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              comment.authorName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: Brand.displayFont,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                                color: palette.title,
-                              ),
-                            ),
-                          ),
-                          if (isPostAuthor) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Brand.green.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                'Autor',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                comment.authorName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontFamily: Brand.displayFont,
-                                  fontSize: 10.5,
+                                  fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
-                                  color: Brand.success,
+                                  color: palette.title,
                                 ),
                               ),
                             ),
+                            if (isPostAuthor) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Brand.green.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Autor',
+                                  style: TextStyle(
+                                    fontFamily: Brand.displayFont,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Brand.success,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        comment.text,
-                        style: TextStyle(
-                          fontFamily: Brand.displayFont,
+                        ),
+                        const SizedBox(height: 4),
+                        ExpandableText(
+                          text: comment.text,
+                          textColor: palette.label,
                           fontSize: 14.5,
-                          height: 1.4,
-                          color: palette.label,
+                          maxLines: 30,
+                          mentions: comment.mentions,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 6, top: 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        timeAgo(comment.createdAt) +
-                            (comment.wasEdited ? ' · editado' : ''),
-                        style: TextStyle(
-                          fontFamily: Brand.displayFont,
-                          fontSize: 12,
-                          color: palette.muted,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 4),
+                    // Wrap: en pantallas angostas baja a otra línea en vez
+                    // de desbordar (las respuestas tienen menos ancho).
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          timeAgo(comment.createdAt) +
+                              (comment.wasEdited ? ' · editado' : ''),
+                          style: TextStyle(
+                            fontFamily: Brand.displayFont,
+                            fontSize: 12,
+                            color: palette.muted,
+                          ),
                         ),
-                      ),
-                      ...[
                         const SizedBox(width: 12),
                         GestureDetector(
-                          onTap: () => _showOptions(comment),
+                          onTap: () => _toggleLike(comment),
+                          child: Row(
+                            children: [
+                              Icon(
+                                comment.likedByMe
+                                    ? PhosphorIconsFill.heart
+                                    : PhosphorIconsRegular.heart,
+                                size: 14,
+                                color:
+                                    comment.likedByMe
+                                        ? const Color(0xFFEF4444)
+                                        : palette.muted,
+                              ),
+                              if (comment.likesCount > 0) ...[
+                                const SizedBox(width: 3),
+                                Text(
+                                  '${comment.likesCount}',
+                                  style: TextStyle(
+                                    fontFamily: Brand.displayFont,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: palette.body,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => _startReply(comment),
                           child: Text(
-                            'Opciones',
+                            'Responder',
                             style: TextStyle(
                               fontFamily: Brand.displayFont,
                               fontSize: 12,
@@ -502,14 +612,29 @@ class _CommentSheetState extends State<CommentSheet> {
                             ),
                           ),
                         ),
+                        ...[
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: () => _showOptions(comment),
+                            child: Text(
+                              'Opciones',
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: palette.body,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -531,6 +656,48 @@ class _CommentSheetState extends State<CommentSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          MentionSuggestions(controller: _input, tracker: _mentions),
+          if (_replyTo != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, left: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    PhosphorIconsRegular.arrowBendUpLeft,
+                    size: 15,
+                    color: Brand.blue,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Respondiendo a ${_replyTo!.authorName}',
+                      style: const TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Brand.blue,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() => _replyTo = null);
+                      _input.clear();
+                      _mentions.clear();
+                    },
+                    child: Text(
+                      'Cancelar',
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: palette.muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_editing != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 6, left: 4),

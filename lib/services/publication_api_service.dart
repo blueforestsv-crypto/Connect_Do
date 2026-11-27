@@ -34,6 +34,9 @@ class PublicationApiService {
     /// Solo las que guardé.
     bool saved = false,
 
+    /// Solo de las personas que sigo.
+    bool following = false,
+
     /// Solo las de esta persona.
     String? authorId,
 
@@ -53,6 +56,7 @@ class PublicationApiService {
       'offset': offset.toString(),
       if (mine) 'mine': 'true',
       if (saved) 'saved': 'true',
+      if (following) 'following': 'true',
       if (authorId != null && authorId.isNotEmpty) 'author': authorId,
       if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
       if (opportunities) 'opportunities': 'true',
@@ -117,8 +121,10 @@ class PublicationApiService {
     String? location,
     String? modality,
     List<Map<String, dynamic>> mediaItems = const [],
+    List<String> mentions = const [],
   }) async {
     final body = <String, dynamic>{
+      if (mentions.isNotEmpty) 'mentions': mentions,
       'type': type,
       'title': title,
       'description': description,
@@ -223,11 +229,20 @@ class PublicationApiService {
         .toList();
   }
 
-  Future<CommentModel> addComment(String publicationId, String text) async {
+  Future<CommentModel> addComment(
+    String publicationId,
+    String text, {
+    String? parentId,
+    List<String> mentions = const [],
+  }) async {
     final response = await http.post(
       ApiConfig.uri('/publications/$publicationId/comments'),
       headers: await _headers(json: true),
-      body: jsonEncode({'text': text}),
+      body: jsonEncode({
+        'text': text,
+        if (parentId != null) 'parent_id': parentId,
+        if (mentions.isNotEmpty) 'mentions': mentions,
+      }),
     );
 
     _ensureOk(response, 'No se pudo publicar el comentario.');
@@ -290,6 +305,50 @@ class PublicationApiService {
     } catch (_) {}
 
     throw PublicationApiException(message, statusCode: response.statusCode);
+  }
+
+  /// Me gusta en un comentario.
+  Future<({bool liked, int likesCount})> setCommentLiked(
+    String publicationId,
+    String commentId, {
+    required bool liked,
+  }) async {
+    final uri = ApiConfig.uri(
+      '/publications/$publicationId/comments/$commentId/like',
+    );
+    final headers = await _headers();
+    final response =
+        liked
+            ? await http.post(uri, headers: headers)
+            : await http.delete(uri, headers: headers);
+    _ensureOk(response, 'No se pudo actualizar el me gusta.');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (
+      liked: data['liked'] == true,
+      likesCount: (data['likes_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Editar título, texto o visibilidad de mi publicación.
+  Future<PublicationModel> updatePublication(
+    String publicationId, {
+    String? title,
+    String? description,
+    String? visibility,
+  }) async {
+    final response = await http.patch(
+      ApiConfig.uri('/publications/$publicationId'),
+      headers: await _headers(json: true),
+      body: jsonEncode({
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (visibility != null) 'visibility': visibility,
+      }),
+    );
+    _ensureOk(response, 'No se pudo guardar la publicación.');
+    return PublicationModel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 }
 

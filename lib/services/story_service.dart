@@ -71,7 +71,15 @@ class StoryGroup {
   final bool isMe;
   final List<StoryItem> stories;
 
-  StoryGroup({required this.user, required this.isMe, required this.stories});
+  /// Historias destacadas del perfil: sin vistas, sin borrar ni responder.
+  final bool isHighlight;
+
+  StoryGroup({
+    required this.user,
+    required this.isMe,
+    required this.stories,
+    this.isHighlight = false,
+  });
 
   bool get hasUnseen => stories.any((s) => !s.viewed);
 

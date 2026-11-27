@@ -706,7 +706,10 @@ class ChatListModel {
     final contact = json['contact'] as Map<String, dynamic>? ?? {};
     final lastMessage = json['last_message'] as Map<String, dynamic>?;
     final contactId = contact['id']?.toString() ?? '';
-    final text = lastMessage?['content']?.toString().trim() ?? '';
+    final raw = lastMessage?['content']?.toString().trim() ?? '';
+    // Publicación compartida: se muestra legible, sin la marca interna.
+    final text =
+        raw.startsWith('[pub:') ? '\u{1F4F0} Publicación compartida' : raw;
     final attachment = lastMessage?['attachment'];
     final attachmentLabel = switch (attachment is Map
         ? attachment['type']

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:connect_do/widgets/social/share_to_chat.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/publication_api_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -179,6 +180,59 @@ class _PublicationActionsState extends State<PublicationActions>
   // COMPARTIR
   // ===============================
   Future<void> _share() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        Widget tile(IconData icon, String title, String value) => ListTile(
+          leading: Icon(icon, color: Brand.blue),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontWeight: FontWeight.w600,
+              color: palette.title,
+            ),
+          ),
+          onTap: () => Navigator.pop(sheetContext, value),
+        );
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                tile(
+                  PhosphorIconsRegular.chatCircle,
+                  'Enviar por chat',
+                  'chat',
+                ),
+                tile(
+                  PhosphorIconsRegular.shareNetwork,
+                  'Compartir fuera de Connect Do',
+                  'out',
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'chat') {
+      await sharePublicationToChat(context, widget.post);
+      return;
+    }
+    await _shareOutside();
+  }
+
+  Future<void> _shareOutside() async {
     final post = widget.post;
     final buffer =
         StringBuffer()

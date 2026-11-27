@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:connect_do/services/social_service.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/services/story_service.dart';
@@ -175,7 +176,7 @@ class _GroupPlayerState extends State<_GroupPlayer>
     setState(() => _loading = true);
 
     final story = _story;
-    if (!widget.group.isMe && !story.viewed) {
+    if (!widget.group.isMe && !widget.group.isHighlight && !story.viewed) {
       story.viewed = true;
       StoryService.markViewed(story.id);
     }
@@ -240,6 +241,167 @@ class _GroupPlayerState extends State<_GroupPlayer>
       _progress.forward();
       _video?.play();
     }
+  }
+
+  static const _reactions = [
+    '\u2764\ufe0f',
+    '\ud83d\ude02',
+    '\ud83d\ude2e',
+    '\ud83d\ude22',
+    '\ud83d\udc4f',
+    '\ud83d\udd25',
+  ];
+
+  Future<void> _react(String emoji) async {
+    HapticFeedback.mediumImpact();
+    final story = _story;
+    try {
+      await ChatService.sendMessage(
+        contactId: widget.group.user.id,
+        content: 'Reaccionó $emoji a tu historia',
+        attachment: {
+          'type': story.type,
+          'url': story.url,
+          if (story.width != null) 'width': story.width,
+          if (story.height != null) 'height': story.height,
+        },
+      );
+      if (mounted) {
+        showAuthMessage(
+          context,
+          'Enviaste $emoji',
+          type: AuthMessageType.success,
+        );
+      }
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo enviar la reacción.');
+    }
+  }
+
+  Future<void> _addToHighlight() async {
+    _pause();
+    final story = _story;
+    List<Highlight> existing = [];
+    try {
+      existing = await SocialService.highlights(widget.group.user.id);
+    } catch (_) {}
+    if (!mounted) return;
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(
+                    PhosphorIconsRegular.plusCircle,
+                    color: Brand.blue,
+                  ),
+                  title: Text(
+                    'Nueva destacada',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontWeight: FontWeight.w700,
+                      color: palette.title,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, ''),
+                ),
+                for (final h in existing)
+                  ListTile(
+                    leading: const Icon(
+                      PhosphorIconsRegular.star,
+                      color: Brand.blue,
+                    ),
+                    title: Text(
+                      h.title,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontWeight: FontWeight.w600,
+                        color: palette.title,
+                      ),
+                    ),
+                    onTap: () => Navigator.pop(sheetContext, h.id),
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (choice == null || !mounted) {
+      _resume();
+      return;
+    }
+
+    try {
+      if (choice.isEmpty) {
+        final controller = TextEditingController();
+        final title = await showDialog<String>(
+          context: context,
+          builder:
+              (dialogContext) => AlertDialog(
+                title: const Text('Nombre de la destacada'),
+                content: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 40,
+                  decoration: const InputDecoration(
+                    hintText: 'Proyectos, eventos…',
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed:
+                        () => Navigator.pop(
+                          dialogContext,
+                          controller.text.trim(),
+                        ),
+                    child: const Text('Crear'),
+                  ),
+                ],
+              ),
+        );
+        controller.dispose();
+        if (title == null || title.isEmpty) {
+          _resume();
+          return;
+        }
+        await SocialService.createHighlight(title, [story.id]);
+      } else {
+        await SocialService.addToHighlight(choice, [story.id]);
+      }
+      if (mounted) {
+        showAuthMessage(
+          context,
+          'Destacada en tu perfil',
+          type: AuthMessageType.success,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        showAuthMessage(
+          context,
+          error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    }
+    _resume();
   }
 
   Future<void> _sendReply() async {
@@ -483,7 +645,7 @@ class _GroupPlayerState extends State<_GroupPlayer>
                         ),
                       ),
                     ),
-                    if (!widget.group.isMe)
+                    if (!widget.group.isMe && !widget.group.isHighlight)
                       IconButton(
                         tooltip: 'Reportar historia',
                         onPressed: () async {
@@ -500,7 +662,17 @@ class _GroupPlayerState extends State<_GroupPlayer>
                           color: Colors.white,
                         ),
                       ),
-                    if (widget.group.isMe)
+                    if (widget.group.isMe && !widget.group.isHighlight) ...[
+                      IconButton(
+                        tooltip: 'Destacar en mi perfil',
+                        onPressed: _addToHighlight,
+                        icon: const Icon(
+                          PhosphorIconsRegular.star,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                    if (widget.group.isMe && !widget.group.isHighlight)
                       IconButton(
                         tooltip: 'Borrar historia',
                         onPressed: _delete,
@@ -561,7 +733,9 @@ class _GroupPlayerState extends State<_GroupPlayer>
                       ),
                     ),
                   ),
-                if (widget.group.isMe)
+                if (widget.group.isHighlight)
+                  const SizedBox.shrink()
+                else if (widget.group.isMe)
                   TextButton.icon(
                     onPressed: _showViewers,
                     icon: const Icon(
@@ -578,7 +752,24 @@ class _GroupPlayerState extends State<_GroupPlayer>
                       ),
                     ),
                   )
-                else
+                else ...[
+                  // Reacciones rápidas: le llegan por chat.
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        for (final emoji in _reactions)
+                          GestureDetector(
+                            onTap: () => _react(emoji),
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 30),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                   Row(
                     children: [
                       Expanded(
@@ -615,6 +806,7 @@ class _GroupPlayerState extends State<_GroupPlayer>
                       ),
                     ],
                   ),
+                ],
               ],
             ),
           ),
