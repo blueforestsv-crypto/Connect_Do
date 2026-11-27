@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/screens/people/profile_views_screen.dart';
+import 'package:connect_do/screens/jobs/jobs_screen.dart';
 import 'package:connect_do/helpers/profile_completion.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/services/user_service.dart';
@@ -277,6 +279,26 @@ class _ProfileHeaderState extends State<ProfileHeader> {
                         icon: PhosphorIconsRegular.tray,
                         label: 'Recibidas',
                         onTap: () => _push(const ReceivedApplicationsScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _QuickLink(
+                        icon: PhosphorIconsRegular.eye,
+                        label: 'Quién me vio',
+                        onTap: () => _push(const ProfileViewsScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _QuickLink(
+                        icon: PhosphorIconsRegular.briefcase,
+                        label: 'Empleos',
+                        onTap: () => _push(const JobsScreen()),
                       ),
                     ),
                   ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/screens/jobs/jobs_screen.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/main_content/notification/notifications_screen.dart';
 import 'package:connect_do/services/application_service.dart';
@@ -406,6 +407,34 @@ class FeedScreenState extends State<FeedScreen> {
         ],
       ),
       actions: [
+        // Buscador de empleos y pasantías.
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Material(
+            color: palette.card,
+            shape: CircleBorder(side: BorderSide(color: palette.cardBorder)),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const JobsScreen()),
+                  ),
+              child: SizedBox(
+                width: 42,
+                height: 42,
+                child: Tooltip(
+                  message: 'Empleos y pasantías',
+                  child: Icon(
+                    PhosphorIconsRegular.briefcase,
+                    size: 21,
+                    color: palette.title,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.only(right: 12),
           child: _NotificationButton(

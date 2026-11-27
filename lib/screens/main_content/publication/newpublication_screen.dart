@@ -89,6 +89,10 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   String _myName = '';
   String _myPhoto = '';
 
+  /// Solo las empresas publican empleos y pasantías.
+  bool _isCompany = false;
+  static const _companyOnly = {'job', 'internship'};
+
   bool get _isOpportunity => const {
     'job',
     'internship',
@@ -125,6 +129,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
 
     if (!mounted) return;
     setState(() {
+      _isCompany = user['account_type'] == 'company';
       _myName = name.isEmpty ? 'Tú' : name;
       _myPhoto =
           photo.isNotEmpty ? photo : user['google_photo_url']?.toString() ?? '';
@@ -690,7 +695,20 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
                 onTap:
                     _isPublishing
                         ? null
-                        : () => setState(() => _type = type.value),
+                        : () {
+                          if (_companyOnly.contains(type.value) &&
+                              !_isCompany) {
+                            showAuthMessage(
+                              context,
+                              'Solo las cuentas de empresa publican empleos y '
+                              'pasantías. Cámbiala en Configuración → Tipo de '
+                              'cuenta.',
+                              type: AuthMessageType.info,
+                            );
+                            return;
+                          }
+                          setState(() => _type = type.value);
+                        },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),

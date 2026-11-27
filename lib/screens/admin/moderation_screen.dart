@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/services/professional_service.dart';
 import 'package:connect_do/screens/applications/application_ui.dart';
 import 'package:connect_do/services/safety_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -22,6 +23,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
 
   int _tab = 0;
   List<AdminReport>? _reports;
+  List<PendingCompany>? _companies;
   String? _error;
   final Set<String> _busy = {};
 
@@ -33,6 +35,19 @@ class _ModerationScreenState extends State<ModerationScreen> {
 
   Future<void> _load() async {
     setState(() => _error = null);
+    if (_tab == 3) {
+      try {
+        final companies = await ProfessionalService.pendingCompanies();
+        if (mounted) setState(() => _companies = companies);
+      } catch (error) {
+        if (mounted) {
+          setState(
+            () => _error = error.toString().replaceFirst('Exception: ', ''),
+          );
+        }
+      }
+      return;
+    }
     try {
       final reports = await SafetyService.adminReports(status: _statuses[_tab]);
       if (mounted) setState(() => _reports = reports);
@@ -93,6 +108,105 @@ class _ModerationScreenState extends State<ModerationScreen> {
     }
   }
 
+  Future<void> _decideCompany(PendingCompany company, bool ok) async {
+    try {
+      await ProfessionalService.verifyCompany(company.userId, ok: ok);
+      if (!mounted) return;
+      setState(() => _companies?.remove(company));
+      showAuthMessage(
+        context,
+        ok ? '${company.name} fue verificada' : 'Verificación rechazada',
+        type: AuthMessageType.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        showAuthMessage(
+          context,
+          error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    }
+  }
+
+  Widget _buildCompanies(AuthPalette palette) {
+    final companies = _companies;
+    if (companies == null && _error == null) {
+      return const Center(child: CircularProgressIndicator(color: Brand.blue));
+    }
+    return RefreshIndicator(
+      color: Brand.blue,
+      onRefresh: _load,
+      child:
+          companies == null || companies.isEmpty
+              ? EmptyState(
+                icon: PhosphorIconsRegular.buildings,
+                title: _error != null ? 'Sin acceso' : 'Nada por revisar',
+                subtitle: _error ?? 'No hay empresas esperando verificación.',
+              )
+              : ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                itemCount: companies.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (_, i) {
+                  final company = companies[i];
+                  return BrandCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          company.name,
+                          style: TextStyle(
+                            fontFamily: Brand.displayFont,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: palette.title,
+                          ),
+                        ),
+                        Text(
+                          [
+                            company.email,
+                            if ((company.sector ?? '').isNotEmpty)
+                              company.sector!,
+                          ].join(' · '),
+                          style: TextStyle(
+                            fontFamily: Brand.displayFont,
+                            fontSize: 13,
+                            color: palette.muted,
+                          ),
+                        ),
+                        if ((company.website ?? '').isNotEmpty)
+                          Text(
+                            company.website!,
+                            style: const TextStyle(
+                              fontFamily: Brand.displayFont,
+                              color: Brand.blue,
+                            ),
+                          ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Brand.blue,
+                              ),
+                              onPressed: () => _decideCompany(company, true),
+                              child: const Text('Verificar'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => _decideCompany(company, false),
+                              child: const Text('Rechazar'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AuthPalette.of(context);
@@ -106,61 +220,70 @@ class _ModerationScreenState extends State<ModerationScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: SegmentTabs(
-              labels: const ['Pendientes', 'Con acción', 'Descartados'],
+              labels: const [
+                'Pendientes',
+                'Con acción',
+                'Descartados',
+                'Empresas',
+              ],
               index: _tab,
               onChanged: (i) {
                 setState(() {
                   _tab = i;
                   _reports = null;
+                  _companies = null;
                 });
                 _load();
               },
             ),
           ),
-          Expanded(
-            child:
-                reports == null && _error == null
-                    ? const Center(
-                      child: CircularProgressIndicator(color: Brand.blue),
-                    )
-                    : RefreshIndicator(
-                      color: Brand.blue,
-                      onRefresh: _load,
-                      child:
-                          reports == null || reports.isEmpty
-                              ? EmptyState(
-                                icon:
-                                    _error != null
-                                        ? PhosphorIconsRegular.lockKey
-                                        : PhosphorIconsRegular.shieldCheck,
-                                title:
-                                    _error != null
-                                        ? 'Sin acceso'
-                                        : 'Todo en orden',
-                                subtitle: _error ?? 'No hay reportes aquí.',
-                              )
-                              : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  4,
-                                  16,
-                                  32,
+          if (_tab == 3)
+            Expanded(child: _buildCompanies(palette))
+          else
+            Expanded(
+              child:
+                  reports == null && _error == null
+                      ? const Center(
+                        child: CircularProgressIndicator(color: Brand.blue),
+                      )
+                      : RefreshIndicator(
+                        color: Brand.blue,
+                        onRefresh: _load,
+                        child:
+                            reports == null || reports.isEmpty
+                                ? EmptyState(
+                                  icon:
+                                      _error != null
+                                          ? PhosphorIconsRegular.lockKey
+                                          : PhosphorIconsRegular.shieldCheck,
+                                  title:
+                                      _error != null
+                                          ? 'Sin acceso'
+                                          : 'Todo en orden',
+                                  subtitle: _error ?? 'No hay reportes aquí.',
+                                )
+                                : ListView.separated(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    4,
+                                    16,
+                                    32,
+                                  ),
+                                  itemCount: reports.length,
+                                  separatorBuilder:
+                                      (_, __) => const SizedBox(height: 12),
+                                  itemBuilder:
+                                      (_, i) => _ReportCard(
+                                        report: reports[i],
+                                        busy: _busy.contains(reports[i].id),
+                                        showActions: _tab == 0,
+                                        onAction:
+                                            (action) =>
+                                                _resolve(reports[i], action),
+                                      ),
                                 ),
-                                itemCount: reports.length,
-                                separatorBuilder:
-                                    (_, __) => const SizedBox(height: 12),
-                                itemBuilder:
-                                    (_, i) => _ReportCard(
-                                      report: reports[i],
-                                      busy: _busy.contains(reports[i].id),
-                                      showActions: _tab == 0,
-                                      onAction:
-                                          (action) =>
-                                              _resolve(reports[i], action),
-                                    ),
-                              ),
-                    ),
-          ),
+                      ),
+            ),
         ],
       ),
     );

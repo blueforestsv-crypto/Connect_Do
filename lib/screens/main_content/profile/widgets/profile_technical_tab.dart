@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/widgets/profile/profile_entries_section.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -154,6 +155,8 @@ class _ProfileTechnicalTabState extends State<ProfileTechnicalTab> {
         ResponsiveHelper.appBottomNavSpace(context),
       ),
       children: [
+        const ProfileEntriesSection(editable: true),
+        const SizedBox(height: 4),
         _Section(
           icon: PhosphorIconsRegular.sparkle,
           title: 'Sobre mí',

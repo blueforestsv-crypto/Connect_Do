@@ -432,12 +432,17 @@ class OutlineActionButton extends StatelessWidget {
               Icon(icon, size: 18),
               const SizedBox(width: 8),
             ],
-            Text(
-              text,
-              style: const TextStyle(
-                fontFamily: Brand.displayFont,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+            // En pantallas angostas el texto se recorta en vez de desbordar.
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: Brand.displayFont,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

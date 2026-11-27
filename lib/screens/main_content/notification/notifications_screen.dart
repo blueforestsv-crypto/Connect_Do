@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/screens/settings/account_type_screen.dart';
 import 'package:connect_do/models/notification_model.dart';
 import 'package:connect_do/screens/applications/my_applications_screen.dart';
 import 'package:connect_do/screens/applications/received_applications_screen.dart';
@@ -81,8 +82,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     final Widget? destination = switch (notification.type) {
-      'like' || 'comment' || 'publication' || 'opportunity' || 'share'
-          when notification.publicationId != null =>
+      'like' ||
+      'comment' ||
+      'publication' ||
+      'opportunity' ||
+      'share' ||
+      'job_alert' when notification.publicationId != null =>
         PublicationDetailScreen(publicationId: notification.publicationId!),
       'contact_request' => const ContactsScreen(initialTabIndex: 2),
       'contact_accepted' => const ContactsScreen(initialTabIndex: 1),
@@ -95,6 +100,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       'message' => const ChatListScreen(),
       'application_new' => const ReceivedApplicationsScreen(),
+      'company_verification' => const AccountTypeScreen(),
       'application_status' => const MyApplicationsScreen(),
       _ => null,
     };
@@ -234,6 +240,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'contact_accepted' => (PhosphorIconsFill.handshake, Brand.green),
     'opportunity' => (PhosphorIconsFill.briefcase, const Color(0xFF8B5CF6)),
     'application_new' => (PhosphorIconsFill.tray, const Color(0xFF8B5CF6)),
+    'job_alert' => (PhosphorIconsFill.bellRinging, const Color(0xFF8B5CF6)),
+    'skill_endorsement' => (PhosphorIconsFill.sealCheck, Brand.green),
+    'company_verification' => (PhosphorIconsFill.sealCheck, Brand.blue),
     'application_status' => (
       PhosphorIconsFill.paperPlaneTilt,
       const Color(0xFFF59E0B),

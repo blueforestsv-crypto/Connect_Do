@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:connect_do/screens/settings/account_type_screen.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/screens/settings/delete_account_screen.dart';
 import 'package:connect_do/screens/settings/blocked_users_screen.dart';
@@ -404,6 +405,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 icon: PhosphorIconsRegular.lockSimple,
                 title: 'Cambiar contraseña',
                 onTap: widget.onChangePassword,
+              ),
+              _SettingsTile(
+                icon: PhosphorIconsRegular.buildings,
+                title: 'Tipo de cuenta',
+                subtitle: 'Personal o empresa (para publicar empleos)',
+                onTap: () => _open(const AccountTypeScreen()),
               ),
             ]),
             _group(palette, 'Preferencias', [

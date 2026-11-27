@@ -110,6 +110,10 @@ class PublicationModel {
   final bool savedByMe;
   final bool isMine;
 
+  /// El autor es una empresa (y si está verificada: insignia ✓).
+  final bool authorIsCompany;
+  final bool authorVerified;
+
   PublicationModel({
     required this.id,
     required this.userName,
@@ -132,6 +136,8 @@ class PublicationModel {
     this.likedByMe = false,
     this.savedByMe = false,
     this.isMine = false,
+    this.authorIsCompany = false,
+    this.authorVerified = false,
   });
 
   PublicationModel copyWith({
@@ -162,6 +168,8 @@ class PublicationModel {
       likedByMe: likedByMe ?? this.likedByMe,
       savedByMe: savedByMe ?? this.savedByMe,
       isMine: isMine,
+      authorIsCompany: authorIsCompany,
+      authorVerified: authorVerified,
     );
   }
 
@@ -359,6 +367,12 @@ class PublicationModel {
       likedByMe: json['liked_by_me'] == true,
       savedByMe: json['saved_by_me'] == true,
       isMine: json['is_mine'] == true,
+      authorIsCompany:
+          json['author'] is Map &&
+          (json['author'] as Map)['account_type'] == 'company',
+      authorVerified:
+          json['author'] is Map &&
+          (json['author'] as Map)['company_verified'] == true,
     );
   }
 

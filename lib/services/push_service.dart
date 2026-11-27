@@ -169,9 +169,14 @@ class PushService {
     final publicationId = data['related_publication_id']?.toString() ?? '';
 
     return switch (data['type']?.toString()) {
-      'like' || 'comment' || 'publication' || 'opportunity' || 'share'
-          when publicationId.isNotEmpty =>
-        PublicationDetailScreen(publicationId: publicationId),
+      'like' ||
+      'comment' ||
+      'publication' ||
+      'opportunity' ||
+      'share' ||
+      'job_alert' when publicationId.isNotEmpty => PublicationDetailScreen(
+        publicationId: publicationId,
+      ),
       // Abre directo la conversación con quien escribió.
       'message' when (data['related_user_id']?.toString() ?? '').isNotEmpty =>
         IndividualChatScreen(

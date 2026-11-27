@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/widgets/profile/profile_entries_section.dart';
+import 'package:connect_do/widgets/common/verified_badge.dart';
+import 'package:connect_do/services/professional_service.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/people/user_posts_screen.dart';
@@ -74,6 +77,42 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _toggleEndorse(SkillDetail skill) async {
+    final endorse = !skill.endorsedByMe;
+    setState(() {
+      skill.endorsedByMe = endorse;
+      skill.count += endorse ? 1 : -1;
+    });
+    try {
+      final updated = await ProfessionalService.endorse(
+        widget.userId,
+        skill.name,
+        endorse: endorse,
+      );
+      if (!mounted) return;
+      setState(() {
+        _profile!['skill_details'] = [
+          for (final s in updated)
+            {
+              'name': s.name,
+              'count': s.count,
+              'endorsed_by_me': s.endorsedByMe,
+            },
+        ];
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        skill.endorsedByMe = !endorse;
+        skill.count += endorse ? -1 : 1;
+      });
+      showAuthMessage(
+        context,
+        error.toString().replaceFirst('Exception: ', ''),
+      );
     }
   }
 
@@ -208,6 +247,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         (_profile!['skills'] as List? ?? const [])
             .map((e) => e.toString())
             .toList();
+    final skillDetails = [
+      for (final item in (_profile!['skill_details'] as List? ?? const []))
+        SkillDetail.fromJson(Map<String, dynamic>.from(item as Map)),
+    ];
+    final entries = [
+      for (final item in (_profile!['entries'] as List? ?? const []))
+        ProfileEntry.fromJson(Map<String, dynamic>.from(item as Map)),
+    ];
+    final isCompany = _profile!['account_type'] == 'company';
+    final canEndorse = !isMe && _status == 'accepted';
 
     final academic = <(IconData, String)>[
       if (_text('university').isNotEmpty)
@@ -249,17 +298,63 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 radius: 44,
               ),
               const SizedBox(height: 12),
-              Text(
-                _name,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: Brand.displayFont,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w700,
-                  color: palette.title,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _name,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: palette.title,
+                      ),
+                    ),
+                  ),
+                  if (isCompany) ...[
+                    const SizedBox(width: 6),
+                    VerifiedBadge(
+                      verified: _profile!['company_verified'] == true,
+                      size: 20,
+                    ),
+                  ],
+                ],
               ),
-              if (_text('career').isNotEmpty) ...[
+              if (_text('headline').isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _text('headline'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: palette.label,
+                  ),
+                ),
+              ],
+              if (isCompany &&
+                  (_text('company_sector').isNotEmpty ||
+                      _text('company_size').isNotEmpty)) ...[
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    if (_text('company_sector').isNotEmpty)
+                      _text('company_sector'),
+                    if (_text('company_size').isNotEmpty)
+                      '${_text('company_size')} personas',
+                  ].join(' · '),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: 13.5,
+                    color: palette.muted,
+                  ),
+                ),
+              ],
+              if (!isCompany && _text('career').isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   [
@@ -350,7 +445,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           ),
         if (_text('bio').isNotEmpty)
           _Section(
-            title: 'Sobre mí',
+            title: isCompany ? 'Sobre la empresa' : 'Sobre mí',
             child: Text(
               _text('bio'),
               style: TextStyle(
@@ -368,15 +463,40 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               children: [for (final (i, t) in academic) _InfoRow(i, t)],
             ),
           ),
+        if (entries.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: ProfileEntriesSection(entries: entries),
+          ),
         if (skills.isNotEmpty)
           _Section(
             title: 'Habilidades',
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Column(
               children: [
-                for (final skill in skills)
-                  StatusPill(label: skill, color: Brand.blue),
+                for (final skill
+                    in skillDetails.isNotEmpty
+                        ? skillDetails
+                        : [
+                          for (final s in skills)
+                            SkillDetail(name: s, count: 0, endorsedByMe: false),
+                        ])
+                  _SkillRow(
+                    skill: skill,
+                    canEndorse: canEndorse,
+                    onToggle: () => _toggleEndorse(skill),
+                  ),
+                if (canEndorse)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Como contacto, puedes validar sus habilidades.',
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 12,
+                        color: palette.muted,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -534,6 +654,68 @@ class _InfoRow extends StatelessWidget {
               Icon(PhosphorIconsRegular.caretRight, size: 16, color: color),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SkillRow extends StatelessWidget {
+  final SkillDetail skill;
+  final bool canEndorse;
+  final VoidCallback onToggle;
+
+  const _SkillRow({
+    required this.skill,
+    required this.canEndorse,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  skill.name,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontWeight: FontWeight.w700,
+                    color: palette.title,
+                  ),
+                ),
+                if (skill.count > 0)
+                  Text(
+                    skill.count == 1
+                        ? '1 contacto lo validó'
+                        : '${skill.count} contactos lo validaron',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 12,
+                      color: palette.muted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (canEndorse)
+            TextButton.icon(
+              onPressed: onToggle,
+              icon: Icon(
+                skill.endorsedByMe
+                    ? PhosphorIconsFill.sealCheck
+                    : PhosphorIconsRegular.sealCheck,
+                size: 18,
+              ),
+              label: Text(skill.endorsedByMe ? 'Validado' : 'Validar'),
+            ),
+        ],
       ),
     );
   }

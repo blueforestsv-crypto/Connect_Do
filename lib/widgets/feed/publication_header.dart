@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/verified_badge.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/screens/people/user_profile_screen.dart';
@@ -57,16 +58,26 @@ class PublicationHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  post.userName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: Brand.displayFont,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: palette.title,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        post.userName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: Brand.displayFont,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: palette.title,
+                        ),
+                      ),
+                    ),
+                    if (post.authorIsCompany) ...[
+                      const SizedBox(width: 4),
+                      VerifiedBadge(verified: post.authorVerified),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Row(

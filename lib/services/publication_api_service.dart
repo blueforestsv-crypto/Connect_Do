@@ -39,6 +39,12 @@ class PublicationApiService {
 
     /// Texto a buscar (título, descripción, lugar o autor).
     String? query,
+
+    /// Buscador de empleos.
+    bool opportunities = false,
+    String? modality,
+    String? location,
+    bool verifiedOnly = false,
   }) async {
     final token = await _getAccessToken();
 
@@ -49,6 +55,11 @@ class PublicationApiService {
       if (saved) 'saved': 'true',
       if (authorId != null && authorId.isNotEmpty) 'author': authorId,
       if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      if (opportunities) 'opportunities': 'true',
+      if (modality != null) 'modality': modality,
+      if (location != null && location.trim().isNotEmpty)
+        'location': location.trim(),
+      if (verifiedOnly) 'verified': 'true',
     };
 
     if (type != null && type.trim().isNotEmpty) {

@@ -506,6 +506,8 @@ class AuthService {
       'last_name': userData['last_name']?.toString() ?? '',
       'role': userData['role']?.toString() ?? 'user',
       'has_password': userData['has_password'] != false,
+      'account_type': userData['account_type']?.toString() ?? 'student',
+      'company_verified': userData['company_verified'] == true,
     };
 
     await _mergeLocalUserData(backendUserData, preserveOnlyIfSameUser: true);

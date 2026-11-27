@@ -50,6 +50,7 @@ class ProfileService {
     String? cvUrl,
     List<String>? skills,
     bool? isPrivate,
+    String? headline,
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -72,6 +73,7 @@ class ProfileService {
       'cv_url': cvUrl,
       'skills': skills,
       'is_private': isPrivate,
+      'headline': headline,
     };
 
     body.removeWhere((key, value) => value == null);
