@@ -516,14 +516,19 @@ class GradientButton extends StatelessWidget {
                         : Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              text,
-                              style: const TextStyle(
-                                fontFamily: Brand.displayFont,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.2,
-                                color: Colors.white,
+                            // Con poco ancho, el texto se recorta.
+                            Flexible(
+                              child: Text(
+                                text,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: Brand.displayFont,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                             if (trailingIcon != null) ...[
