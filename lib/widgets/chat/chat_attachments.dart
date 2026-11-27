@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/screens/media/document_viewer_screen.dart';
 import 'package:connect_do/services/live_location_service.dart';
 import 'package:connect_do/services/realtime_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -93,10 +94,7 @@ class FileBubble extends StatelessWidget {
       onTap:
           url == null || uploading
               ? null
-              : () => launchUrl(
-                Uri.parse(url!),
-                mode: LaunchMode.externalApplication,
-              ),
+              : () => openDocument(context, url: url!, name: name),
       child: Container(
         width: 240,
         padding: const EdgeInsets.all(10),

@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/screens/main_content/chats/chat_media_screen.dart';
 import 'package:connect_do/services/live_location_service.dart';
 import 'package:connect_do/widgets/chat/chat_attachments.dart';
 import 'package:connect_do/screens/main_content/chats/group_info_screen.dart';
@@ -1271,6 +1272,21 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     }
   }
 
+  void _openShared() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => ChatMediaScreen(
+              chatId: widget.chatId,
+              isGroup: widget.isGroup,
+              title: _title,
+              myId: _myId,
+            ),
+      ),
+    );
+  }
+
   void _openGroupInfo() {
     if (!widget.isGroup) return;
     Navigator.push(
@@ -1438,7 +1454,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
               color: palette.title,
             ),
             onSelected: (value) async {
-              if (value == 'info') {
+              if (value == 'media') {
+                _openShared();
+              } else if (value == 'info') {
                 _openGroupInfo();
               } else if (value == 'report') {
                 showReportSheet(
@@ -1460,11 +1478,19 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                     widget.isGroup
                         ? const [
                           PopupMenuItem(
+                            value: 'media',
+                            child: Text('Archivos, enlaces y documentos'),
+                          ),
+                          PopupMenuItem(
                             value: 'info',
                             child: Text('Información del grupo'),
                           ),
                         ]
                         : const [
+                          PopupMenuItem(
+                            value: 'media',
+                            child: Text('Archivos, enlaces y documentos'),
+                          ),
                           PopupMenuItem(
                             value: 'report',
                             child: Text('Reportar'),
@@ -2106,6 +2132,42 @@ class _Bubble extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 image,
+                if (m.attachmentType == 'video' &&
+                    !uploading &&
+                    m.duration != null)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            PhosphorIconsFill.videoCamera,
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            formatDuration(m.duration!),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (m.attachmentType == 'video' && !uploading)
                   Center(
                     child: Container(

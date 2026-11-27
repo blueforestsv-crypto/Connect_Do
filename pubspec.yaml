@@ -32,6 +32,8 @@ dependencies:
   geolocator: ^14.0.2
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
+  pdfx: ^2.11.1
+  open_filex: ^5.0.0
   
   
 

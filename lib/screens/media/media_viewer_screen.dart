@@ -295,9 +295,15 @@ class _VideoPageState extends State<_VideoPage> {
                   bottom: 24 + MediaQuery.of(context).padding.bottom,
                   child: Row(
                     children: [
+                      // Transcurrido / total.
                       Text(
-                        formatDuration(value.position.inMilliseconds / 1000),
-                        style: const TextStyle(color: Colors.white),
+                        '${formatDuration(value.position.inMilliseconds / 1000)}'
+                        ' / ${formatDuration(value.duration.inMilliseconds / 1000)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -312,9 +318,14 @@ class _VideoPageState extends State<_VideoPage> {
                         ),
                       ),
                       const SizedBox(width: 10),
+                      // Cuánto falta para que termine.
                       Text(
-                        formatDuration(value.duration.inMilliseconds / 1000),
-                        style: const TextStyle(color: Colors.white),
+                        '-${formatDuration(remainingSeconds(value.position, value.duration))}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ],
                   ),
@@ -326,4 +337,10 @@ class _VideoPageState extends State<_VideoPage> {
       ),
     );
   }
+}
+
+/// Segundos que faltan para que termine (nunca negativo).
+double remainingSeconds(Duration position, Duration total) {
+  final left = total - position;
+  return left.isNegative ? 0 : left.inMilliseconds / 1000;
 }

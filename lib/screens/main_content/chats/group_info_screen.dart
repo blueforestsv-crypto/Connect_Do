@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/screens/main_content/chats/chat_media_screen.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/people/user_profile_screen.dart';
 import 'package:connect_do/services/contact_service.dart';
@@ -483,6 +484,37 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Brand.blue.withValues(alpha: 0.12),
+                        child: const Icon(
+                          PhosphorIconsRegular.folderSimple,
+                          color: Brand.blue,
+                        ),
+                      ),
+                      title: Text(
+                        'Archivos, enlaces y documentos',
+                        style: TextStyle(
+                          fontFamily: Brand.displayFont,
+                          fontWeight: FontWeight.w700,
+                          color: palette.title,
+                        ),
+                      ),
+                      trailing: const Icon(PhosphorIconsRegular.caretRight),
+                      onTap:
+                          () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => ChatMediaScreen(
+                                    chatId: group.id,
+                                    isGroup: true,
+                                    title: group.name,
+                                    myId: _myId,
+                                  ),
+                            ),
+                          ),
+                    ),
                     if (group.iAmAdmin)
                       ListTile(
                         leading: const CircleAvatar(
