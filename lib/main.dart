@@ -16,12 +16,14 @@ import 'screens/main_content/notification/notifications_screen.dart';
 import 'screens/main_content/profile/profile_screen.dart';
 
 import 'services/auth_service.dart';
+import 'services/error_reporter.dart';
 import 'services/push_service.dart';
 import 'services/session_keeper.dart';
 import 'services/theme_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorReporter.install();
 
   await ThemeService.loadTheme();
   await PushService.init();

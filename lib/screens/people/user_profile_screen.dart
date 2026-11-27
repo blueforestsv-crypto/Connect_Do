@@ -648,6 +648,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         icon: PhosphorIconsRegular.clock,
         onPressed: null,
       ),
+      _ when _profile?['accepts_messages'] == true => Column(
+        children: [
+          GradientButton(
+            text: 'Conectar',
+            isLoading: _busy,
+            trailingIcon: PhosphorIconsRegular.userPlus,
+            onPressed: _connect,
+          ),
+          const SizedBox(height: 10),
+          OutlineActionButton(
+            text: 'Enviar mensaje',
+            icon: PhosphorIconsRegular.chatCircle,
+            onPressed: _message,
+          ),
+        ],
+      ),
       _ => GradientButton(
         text: 'Conectar',
         isLoading: _busy,

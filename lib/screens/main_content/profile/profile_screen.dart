@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:connect_do/screens/admin/client_errors_screen.dart';
+import 'package:connect_do/screens/settings/privacy_screen.dart';
 import 'package:connect_do/screens/settings/account_type_screen.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/screens/settings/delete_account_screen.dart';
@@ -449,6 +451,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             ]),
             _group(palette, 'Privacidad y seguridad', [
               _SettingsTile(
+                icon: PhosphorIconsRegular.shieldStar,
+                title: 'Privacidad',
+                subtitle: 'Quién te escribe, historias, en línea y sesiones',
+                onTap: () => _open(const PrivacyScreen()),
+              ),
+              _SettingsTile(
                 icon: PhosphorIconsRegular.prohibit,
                 title: 'Personas bloqueadas',
                 onTap: () => _open(const BlockedUsersScreen()),
@@ -470,6 +478,13 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   title: 'Moderación',
                   subtitle: 'Revisar reportes',
                   onTap: () => _open(const ModerationScreen()),
+                ),
+              if (_isAdmin)
+                _SettingsTile(
+                  icon: PhosphorIconsRegular.bug,
+                  title: 'Errores de la app',
+                  subtitle: 'Fallas reportadas por los teléfonos',
+                  onTap: () => _open(const ClientErrorsScreen()),
                 ),
             ]),
             _group(palette, null, [

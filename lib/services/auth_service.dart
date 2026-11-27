@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/services/privacy_service.dart';
 import 'package:connect_do/services/realtime_service.dart';
 import 'package:connect_do/services/push_service.dart';
 import 'package:connect_do/core/api/api_config.dart';
@@ -31,7 +32,10 @@ class AuthService {
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/login'),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Name': deviceLabel(),
+      },
       body: jsonEncode({'email': cleanEmail, 'password': password}),
     );
 
@@ -232,7 +236,10 @@ class AuthService {
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/google'),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Name': deviceLabel(),
+      },
       // El botón de Google muestra que al continuar se aceptan los términos.
       body: jsonEncode({'id_token': idToken, 'accept_terms': true}),
     );

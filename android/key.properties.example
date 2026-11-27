@@ -1,0 +1,17 @@
+# Copia este archivo como "key.properties" (en esta misma carpeta android/)
+# y llena tus datos. key.properties y el .jks NO se suben a git.
+#
+# 1) Crear la llave (una sola vez; guarda el .jks y las claves en un lugar
+#    seguro: si se pierden, no podrás actualizar la app en Play Store):
+#
+#    keytool -genkey -v -keystore C:\Users\<tu-usuario>\connect_do_release.jks ^
+#      -keyalg RSA -keysize 2048 -validity 10000 -alias connectdo
+#
+# 2) Ver su huella SHA-1 (para Firebase y Google Cloud → cliente Android):
+#
+#    keytool -list -v -keystore C:\Users\<tu-usuario>\connect_do_release.jks -alias connectdo
+#
+storePassword=TU_CLAVE_DEL_ALMACEN
+keyPassword=TU_CLAVE_DE_LA_LLAVE
+keyAlias=connectdo
+storeFile=C:/Users/<tu-usuario>/connect_do_release.jks
