@@ -34,7 +34,7 @@ class AuthService {
       Uri.parse('${ApiConfig.baseUrl}/auth/login'),
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-Name': deviceLabel(),
+        'X-Device-Name': deviceHeader(),
       },
       body: jsonEncode({'email': cleanEmail, 'password': password}),
     );
@@ -238,7 +238,7 @@ class AuthService {
       Uri.parse('${ApiConfig.baseUrl}/auth/google'),
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-Name': deviceLabel(),
+        'X-Device-Name': deviceHeader(),
       },
       // El botón de Google muestra que al continuar se aceptan los términos.
       body: jsonEncode({'id_token': idToken, 'accept_terms': true}),

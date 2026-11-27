@@ -24,6 +24,14 @@ void main() {
     });
   });
 
+  test('el nombre del dispositivo viaja sin tildes (encabezado HTTP)', () {
+    bool ascii(String v) => v.codeUnits.every((c) => c >= 0x20 && c < 0x7f);
+    expect(ascii(deviceHeader()), isTrue);
+    // "Teléfono Android" rompía el inicio de sesión.
+    expect(Uri.encodeComponent('Teléfono Android'), 'Tel%C3%A9fono%20Android');
+    expect(ascii(Uri.encodeComponent('Teléfono Android')), isTrue);
+  });
+
   test('reconoce la sesión de este teléfono', () {
     expect(PrivacyService.jtiOf(_fakeToken('abc123')), 'abc123');
     expect(PrivacyService.jtiOf('no-es-un-token'), isNull);

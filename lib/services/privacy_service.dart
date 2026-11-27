@@ -17,6 +17,11 @@ String deviceLabel() {
   return Platform.operatingSystem;
 }
 
+/// [deviceLabel] listo para un encabezado HTTP: los encabezados solo
+/// admiten ASCII ("Teléfono" lleva tilde), así que va codificado y el
+/// servidor lo decodifica.
+String deviceHeader() => Uri.encodeComponent(deviceLabel());
+
 class PrivacySettings {
   /// "contacts" | "everyone"
   final String messagePrivacy;
