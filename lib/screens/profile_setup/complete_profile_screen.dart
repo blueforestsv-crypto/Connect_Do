@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
 import 'package:connect_do/helpers/profile_completion.dart';
 import 'package:connect_do/services/profile_service.dart';
@@ -175,7 +176,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   }
 
   void _showImageSourceSelection() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,

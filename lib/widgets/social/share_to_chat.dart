@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/chat_service.dart';
 import 'package:connect_do/services/contact_service.dart';
@@ -22,7 +23,7 @@ Future<void> sharePublicationToChat(
   BuildContext context,
   PublicationModel post,
 ) async {
-  final contact = await showModalBottomSheet<Map<String, dynamic>>(
+  final contact = await showAppSheet<Map<String, dynamic>>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,

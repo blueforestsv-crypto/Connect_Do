@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/services/profile_service.dart';
 import 'package:connect_do/screens/profile_setup/entry_editor_screen.dart';
 import 'package:connect_do/services/professional_service.dart';
@@ -102,7 +103,7 @@ class _ProfileEntriesSectionState extends State<ProfileEntriesSection> {
   }
 
   void _chooseKind() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/services/safety_service.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/widgets/auth/auth_controls.dart';
@@ -13,7 +14,7 @@ Future<void> showReportSheet(
   required String targetId,
   String? title,
 }) async {
-  final reason = await showModalBottomSheet<String>(
+  final reason = await showAppSheet<String>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,

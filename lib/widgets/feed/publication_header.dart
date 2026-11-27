@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/screens/main_content/publication/edit_publication_screen.dart';
 import 'package:connect_do/widgets/common/verified_badge.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
@@ -139,7 +140,7 @@ class PublicationHeader extends StatelessWidget {
   }
 
   void _showOptions(BuildContext context) {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/screens/main_content/chats/chat_media_screen.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
 import 'package:connect_do/screens/people/user_profile_screen.dart';
@@ -317,7 +318,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   Future<void> _addMembers() async {
     Set<String> chosen = {};
-    final ok = await showModalBottomSheet<bool>(
+    final ok = await showAppSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

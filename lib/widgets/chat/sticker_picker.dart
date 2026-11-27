@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/services/sticker_service.dart';
 import 'package:connect_do/theme/brand.dart';
 import 'package:connect_do/utils/cloudinary_url.dart';
@@ -9,7 +10,7 @@ import 'package:connect_do/widgets/auth/auth_controls.dart';
 
 /// Abre el selector y devuelve el sticker elegido (o null).
 Future<StickerModel?> showStickerPicker(BuildContext context) {
-  return showModalBottomSheet<StickerModel>(
+  return showAppSheet<StickerModel>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -131,7 +132,7 @@ class _StickerPickerState extends State<_StickerPicker> {
   }
 
   void _showAddMenu() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {

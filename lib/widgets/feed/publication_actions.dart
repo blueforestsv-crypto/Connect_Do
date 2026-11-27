@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/widgets/social/share_to_chat.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/publication_api_service.dart';
@@ -159,7 +160,7 @@ class _PublicationActionsState extends State<PublicationActions>
   // COMENTARIOS
   // ===============================
   Future<void> _openComments() async {
-    await showModalBottomSheet(
+    await showAppSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -180,7 +181,7 @@ class _PublicationActionsState extends State<PublicationActions>
   // COMPARTIR
   // ===============================
   Future<void> _share() async {
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showAppSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {

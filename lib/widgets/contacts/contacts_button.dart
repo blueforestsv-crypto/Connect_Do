@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/models/contact_request_model.dart';
 import 'package:connect_do/services/contact_service.dart';
 
@@ -183,7 +184,7 @@ class _ContactButtonState extends State<ContactButton> {
   }
 
   void _showRespondOptions() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/services/media_upload_service.dart';
 import 'package:connect_do/services/story_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -81,7 +82,7 @@ class _NewStoryScreenState extends State<NewStoryScreen> {
   }
 
   Future<void> _choose() async {
-    final source = await showModalBottomSheet<String>(
+    final source = await showAppSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {

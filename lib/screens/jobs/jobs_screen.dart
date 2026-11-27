@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/models/publication_model.dart';
 import 'package:connect_do/services/professional_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
@@ -162,7 +163,7 @@ class _JobsScreenState extends State<JobsScreen> {
   }
 
   void _showAlerts() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,

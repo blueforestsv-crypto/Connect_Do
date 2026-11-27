@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/widgets/social/mention_suggestions.dart';
 import 'package:connect_do/services/media_upload_service.dart';
 import 'package:connect_do/services/publication_api_service.dart';
@@ -232,7 +233,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   void _chooseMedia() {
     if (_isPublishing || _images.length >= _maxImages) return;
 
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -397,7 +398,7 @@ class _NewPublicationScreenState extends State<NewPublicationScreen> {
   }
 
   void _chooseVisibility() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,

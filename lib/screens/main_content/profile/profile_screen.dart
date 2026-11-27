@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/screens/admin/client_errors_screen.dart';
 import 'package:connect_do/screens/settings/privacy_screen.dart';
 import 'package:connect_do/screens/settings/account_type_screen.dart';
@@ -107,7 +108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // CONFIGURACIÓN
   // =====================================================
   void _openSettings() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

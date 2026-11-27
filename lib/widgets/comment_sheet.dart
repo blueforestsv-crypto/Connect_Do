@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/widgets/social/mention_suggestions.dart';
 import 'package:connect_do/widgets/feed/expandable_text.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
@@ -257,7 +258,7 @@ class _CommentSheetState extends State<CommentSheet> {
   void _showOptions(CommentModel comment) {
     HapticFeedback.selectionClick();
 
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,

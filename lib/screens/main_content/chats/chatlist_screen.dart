@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/widgets/stories/stories_row.dart';
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
@@ -153,7 +154,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _startNewChat() async {
-    final contact = await showModalBottomSheet<Map<String, dynamic>>(
+    final contact = await showAppSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

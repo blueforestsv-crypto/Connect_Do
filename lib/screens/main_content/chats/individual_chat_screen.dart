@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/screens/main_content/chats/chat_media_screen.dart';
 import 'package:connect_do/services/live_location_service.dart';
 import 'package:connect_do/widgets/chat/chat_attachments.dart';
@@ -603,7 +604,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   // ===============================
   void _openAttachMenu() {
     FocusScope.of(context).unfocus();
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -752,7 +753,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
   /// Ubicación actual o en tiempo real (15 min, 1 h u 8 h).
   void _chooseLocation() {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -1001,7 +1002,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   void _stickerOptions(ChatMessageModel message) {
     final url = message.attachmentUrl;
     if (url == null) return;
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
@@ -1097,7 +1098,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     HapticFeedback.mediumImpact();
     final mine = message.reactions[_myId];
 
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -1298,7 +1299,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   }
 
   void _showFailedOptions(ChatMessageModel message) {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.transparent,

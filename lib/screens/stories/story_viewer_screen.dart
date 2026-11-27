@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/services/social_service.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
 import 'package:connect_do/services/chat_service.dart';
@@ -287,7 +288,7 @@ class _GroupPlayerState extends State<_GroupPlayer>
     } catch (_) {}
     if (!mounted) return;
 
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showAppSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
@@ -435,7 +436,7 @@ class _GroupPlayerState extends State<_GroupPlayer>
 
   Future<void> _showViewers() async {
     _pause();
-    await showModalBottomSheet(
+    await showAppSheet(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,

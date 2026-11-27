@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:connect_do/widgets/common/app_sheet.dart';
 import 'package:connect_do/models/application_model.dart';
 import 'package:connect_do/screens/applications/application_ui.dart';
 import 'package:connect_do/screens/main_content/chats/individual_chat_screen.dart';
@@ -91,7 +92,7 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
           '«${_app.publicationTitle}» y nos gustaría conversar contigo.',
     );
 
-    final message = await showModalBottomSheet<String>(
+    final message = await showAppSheet<String>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
