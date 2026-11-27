@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:connect_do/services/realtime_service.dart';
 import 'package:connect_do/services/push_service.dart';
 import 'package:connect_do/core/api/api_config.dart';
 import 'package:connect_do/core/api/google_auth_config.dart';
@@ -836,6 +837,7 @@ class AuthService {
 
     // Este teléfono deja de recibir push de la cuenta (antes de borrar tokens).
     await PushService.unregisterDevice();
+    RealtimeService.instance.disconnect();
 
     final refreshToken = prefs.getString('refresh_token') ?? '';
     if (forgetUser) {

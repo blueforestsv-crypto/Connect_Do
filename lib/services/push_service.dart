@@ -138,8 +138,12 @@ class PushService {
   static void _showInApp(RemoteMessage message) {
     received.value++;
     // Si ya estás en esa conversación, el mensaje aparece solo en el chat.
-    if (message.data['type'] == 'message' &&
-        message.data['related_user_id'] == IndividualChatScreen.openChatId) {
+    final openChat = IndividualChatScreen.openChatId;
+    if (openChat != null &&
+        ((message.data['type'] == 'message' &&
+                message.data['related_user_id'] == openChat) ||
+            (message.data['type'] == 'group_message' &&
+                message.data['group_id'] == openChat))) {
       return;
     }
     final context = navigatorKey.currentContext;
@@ -187,7 +191,16 @@ class PushService {
           chatName: data['sender_name']?.toString() ?? 'Chat',
           chatAvatar: data['sender_photo']?.toString() ?? '',
         ),
-      'message' || 'application_contact' => const ChatListScreen(),
+      'group_message' when (data['group_id']?.toString() ?? '').isNotEmpty =>
+        IndividualChatScreen(
+          chatId: data['group_id'].toString(),
+          chatName: data['group_name']?.toString() ?? 'Grupo',
+          chatAvatar: '',
+          isGroup: true,
+        ),
+      'message' ||
+      'group_message' ||
+      'application_contact' => const ChatListScreen(),
       'contact_request' => const ContactsScreen(initialTabIndex: 2),
       'contact_accepted' => const ContactsScreen(initialTabIndex: 1),
       'application_new' => const ReceivedApplicationsScreen(),

@@ -10,6 +10,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:record/record.dart';
 
+import 'package:connect_do/screens/main_content/chats/group_info_screen.dart';
+import 'package:connect_do/services/group_service.dart';
+import 'package:connect_do/services/realtime_service.dart';
 import 'package:connect_do/widgets/social/share_to_chat.dart';
 import 'package:connect_do/screens/main_content/home/publication_detail_screen.dart';
 import 'package:connect_do/widgets/safety/report_sheet.dart';
@@ -29,20 +32,24 @@ import 'package:connect_do/widgets/chat/voice_note_player.dart';
 import 'package:connect_do/widgets/feed/user_avatar.dart';
 import 'package:connect_do/widgets/media/media_gallery.dart';
 
-/// Conversación con un contacto. Se actualiza cada pocos segundos.
+/// Conversación con un contacto o un grupo. Los mensajes llegan al instante
+/// por la conexión en tiempo real; si se cae, se consulta cada pocos segundos.
 class IndividualChatScreen extends StatefulWidget {
-  /// Id del contacto cuya conversación está abierta ahora (o null).
+  /// Id del contacto (o grupo) cuya conversación está abierta ahora.
   static String? get openChatId => _IndividualChatScreenState.openChatId;
 
+  /// Id del contacto o, si [isGroup], del grupo.
   final String chatId;
   final String chatName;
   final String chatAvatar;
+  final bool isGroup;
 
   const IndividualChatScreen({
     super.key,
     required this.chatId,
     required this.chatName,
     required this.chatAvatar,
+    this.isGroup = false,
   });
 
   @override
@@ -87,10 +94,33 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   bool _isFetching = false;
   String _myId = '';
 
+  // ---- Tiempo real ----
+  StreamSubscription<Map<String, dynamic>>? _live;
+  int _ticks = 0;
+
+  /// Quién está escribiendo ahora (id -> nombre) y cuándo se borra.
+  final Map<String, String> _typing = {};
+  final Map<String, Timer> _typingTimers = {};
+  DateTime? _typingSentAt;
+  Timer? _stopTyping;
+
+  bool _online = false;
+  DateTime? _lastSeen;
+
+  /// Mensaje que se está respondiendo.
+  ChatMessageModel? _replyTo;
+
+  /// Datos del grupo (miembros, nombre actual, si soy admin).
+  ChatGroup? _group;
+  late String _title = widget.chatName;
+
   @override
   void initState() {
     super.initState();
-    _input.addListener(() => setState(() {}));
+    _input.addListener(() {
+      setState(() {});
+      _onTypingChanged();
+    });
     WidgetsBinding.instance.addObserver(this);
     openChatId = widget.chatId;
     _start();
@@ -110,13 +140,30 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(_pollInterval, (_) => _fetch());
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _tick());
+  }
+
+  /// Con la conexión en tiempo real abierta casi no se consulta (solo un
+  /// repaso cada minuto); sin ella, se consulta cada 5 s como antes.
+  void _tick() {
+    _ticks++;
+    if (!RealtimeService.instance.connected.value) {
+      _fetch();
+    } else if (_ticks % 12 == 0) {
+      _fetch(full: true);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (openChatId == widget.chatId) openChatId = null;
+    _live?.cancel();
+    _stopTyping?.cancel();
+    for (final t in _typingTimers.values) {
+      t.cancel();
+    }
+    if (_typingSentAt != null) _sendTyping(false);
     _pollTimer?.cancel();
     _recordTimer?.cancel();
     _recorder.dispose();
@@ -127,8 +174,206 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
   Future<void> _start() async {
     _myId = (await UserService.getUser())['id']?.toString() ?? '';
+    RealtimeService.instance.ensureConnected();
+    _live = RealtimeService.instance.events.listen(_onEvent);
+    if (widget.isGroup) {
+      _loadGroup();
+    } else {
+      final known = RealtimeService.instance.online[widget.chatId];
+      if (known != null) _online = known;
+      _lastSeen = RealtimeService.instance.lastSeen[widget.chatId];
+      ChatService.presence(widget.chatId)
+          .then((value) {
+            if (!mounted) return;
+            setState(() {
+              _online = value.$1;
+              _lastSeen = value.$2 ?? _lastSeen;
+            });
+          })
+          .catchError((_) {});
+    }
     await _fetch(initial: true);
     _startPolling();
+  }
+
+  Future<void> _loadGroup() async {
+    try {
+      final group = await GroupService.get(widget.chatId);
+      if (mounted) {
+        setState(() {
+          _group = group;
+          _title = group.name;
+        });
+      }
+    } catch (_) {
+      // Ya no pertenezco al grupo.
+      if (mounted && _group != null) Navigator.maybePop(context);
+    }
+  }
+
+  // ===============================
+  // TIEMPO REAL
+  // ===============================
+
+  /// ¿El evento es de esta conversación?
+  bool _isMine(Map<String, dynamic> e) =>
+      widget.isGroup
+          ? e['group_id']?.toString() == widget.chatId
+          : e['group_id'] == null;
+
+  void _onEvent(Map<String, dynamic> e) {
+    if (!mounted) return;
+    switch (e['type']) {
+      case 'message' when !widget.isGroup:
+        final data = Map<String, dynamic>.from(e['message'] as Map);
+        final from = data['sender_id']?.toString();
+        final to = data['receiver_id']?.toString();
+        if (from != widget.chatId && to != widget.chatId) return;
+        _receive(data, fromOther: from == widget.chatId);
+      case 'group_message' when widget.isGroup:
+        final data = Map<String, dynamic>.from(e['message'] as Map);
+        if (data['group_id']?.toString() != widget.chatId) return;
+        final from = (data['sender'] as Map?)?['id']?.toString();
+        _receive(data, fromOther: from != _myId);
+      case 'read' when !widget.isGroup:
+        if (e['by']?.toString() != widget.chatId) return;
+        setState(() {
+          for (final m in _messages) {
+            if (m.isMe) m.isRead = true;
+          }
+        });
+      case 'typing':
+        if (!_isMine(e)) return;
+        final from = e['from']?.toString() ?? '';
+        if (!widget.isGroup && from != widget.chatId) return;
+        _setTyping(from, e['is_typing'] == true);
+      case 'reaction':
+        if (!_isMine(e)) return;
+        final m = _find(e['message_id']?.toString());
+        if (m == null) return;
+        setState(() => m.reactions = ChatService.reactionsFrom(e['reactions']));
+      case 'deleted':
+        if (!_isMine(e)) return;
+        final m = _find(e['message_id']?.toString());
+        if (m == null) return;
+        setState(() => m.markDeleted());
+      case 'presence' when !widget.isGroup:
+        if (e['user_id']?.toString() != widget.chatId) return;
+        setState(() {
+          _online = e['online'] == true;
+          final seen = DateTime.tryParse(e['last_seen_at']?.toString() ?? '');
+          if (seen != null) _lastSeen = seen.toLocal();
+        });
+      case 'group_updated' when widget.isGroup:
+        if (e['group_id']?.toString() == widget.chatId) {
+          _loadGroup();
+          _fetch();
+        }
+    }
+  }
+
+  ChatMessageModel? _find(String? id) {
+    for (final m in _messages) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
+
+  void _receive(Map<String, dynamic> data, {required bool fromOther}) {
+    final message = ChatMessageModel.fromBackend(data, currentUserId: _myId);
+    if (_find(message.id) != null) return;
+    setState(() {
+      _messages.insert(0, message);
+      if (fromOther) _setTyping(message.senderId ?? '', false, rebuild: false);
+    });
+    if (fromOther) {
+      HapticFeedback.selectionClick();
+      _markRead();
+    }
+  }
+
+  void _markRead() {
+    if (widget.isGroup) {
+      GroupService.markRead(widget.chatId).ignore();
+    } else {
+      ChatService.markAsRead(contactId: widget.chatId).ignore();
+    }
+  }
+
+  void _setTyping(String userId, bool isTyping, {bool rebuild = true}) {
+    _typingTimers.remove(userId)?.cancel();
+    void apply() {
+      if (isTyping) {
+        _typing[userId] = _nameOf(userId);
+      } else {
+        _typing.remove(userId);
+      }
+    }
+
+    rebuild ? setState(apply) : apply();
+    if (isTyping) {
+      // Si no vuelve a avisar en 6 s, se asume que dejó de escribir.
+      _typingTimers[userId] = Timer(const Duration(seconds: 6), () {
+        if (mounted) setState(() => _typing.remove(userId));
+      });
+    }
+  }
+
+  String _nameOf(String userId) {
+    if (!widget.isGroup) return widget.chatName;
+    for (final m in _group?.members ?? const <GroupPerson>[]) {
+      if (m.id == userId) return m.name.split(' ').first;
+    }
+    return 'Alguien';
+  }
+
+  /// Avisa "escribiendo…" como mucho cada 3 s y "dejó de escribir" tras
+  /// 4 s sin teclear.
+  void _onTypingChanged() {
+    if (_input.text.trim().isEmpty) {
+      if (_typingSentAt != null) _sendTyping(false);
+      return;
+    }
+    final now = DateTime.now();
+    if (_typingSentAt == null ||
+        now.difference(_typingSentAt!) > const Duration(seconds: 3)) {
+      _sendTyping(true);
+    }
+    _stopTyping?.cancel();
+    _stopTyping = Timer(const Duration(seconds: 4), () => _sendTyping(false));
+  }
+
+  void _sendTyping(bool isTyping) {
+    _typingSentAt = isTyping ? DateTime.now() : null;
+    if (!isTyping) _stopTyping?.cancel();
+    RealtimeService.instance.sendTyping(
+      to: widget.isGroup ? null : widget.chatId,
+      groupId: widget.isGroup ? widget.chatId : null,
+      isTyping: isTyping,
+    );
+  }
+
+  /// Texto bajo el nombre: escribiendo, en línea, últ. vez o miembros.
+  String? get _subtitle {
+    if (_typing.isNotEmpty) {
+      if (!widget.isGroup) return 'escribiendo…';
+      final names = _typing.values.toList();
+      return names.length == 1
+          ? '${names.first} está escribiendo…'
+          : 'Varios están escribiendo…';
+    }
+    if (widget.isGroup) {
+      final members = _group?.members ?? const <GroupPerson>[];
+      if (members.isEmpty) return null;
+      final names = [
+        for (final m in members)
+          if (m.id != _myId) m.name.split(' ').first,
+      ];
+      return names.isEmpty ? 'Solo tú' : 'Tú, ${names.join(', ')}';
+    }
+    if (_online) return 'en línea';
+    if (_lastSeen != null) return 'últ. vez ${lastSeenLabel(_lastSeen!)}';
+    return null;
   }
 
   Future<void> _fetch({bool initial = false, bool full = false}) async {
@@ -145,10 +390,16 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
         _pollCount % _fullRefreshEvery == 0;
 
     try {
-      final data = await ChatService.getMessages(
-        contactId: widget.chatId,
-        after: complete ? null : newest,
-      );
+      final data =
+          widget.isGroup
+              ? await GroupService.messages(
+                widget.chatId,
+                after: complete ? null : newest,
+              )
+              : await ChatService.getMessages(
+                contactId: widget.chatId,
+                after: complete ? null : newest,
+              );
       final incoming =
           data
               .map((m) => ChatMessageModel.fromBackend(m, currentUserId: _myId))
@@ -156,8 +407,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       // Solo marca como leído si hay mensajes nuevos del otro sin leer.
-      if (incoming.any((m) => !m.isMe && !m.isRead)) {
-        ChatService.markAsRead(contactId: widget.chatId).ignore();
+      if (widget.isGroup) {
+        final known = _messages.map((m) => m.id).toSet();
+        if (initial || incoming.any((m) => !m.isMe && !known.contains(m.id))) {
+          _markRead();
+        }
+      } else if (incoming.any((m) => !m.isMe && !m.isRead)) {
+        _markRead();
       }
 
       if (!mounted) return;
@@ -203,6 +459,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     final text = _input.text.trim();
     if (text.isEmpty) return;
     _input.clear();
+    _sendTyping(false);
     _enqueue(
       ChatMessageModel(
         id: 'local-${DateTime.now().microsecondsSinceEpoch}',
@@ -215,7 +472,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
   /// Agrega el mensaje a la lista y lo envía (subiendo antes el adjunto).
   void _enqueue(ChatMessageModel pending) {
-    setState(() => _pending.insert(0, pending));
+    // La respuesta citada viaja con el mensaje (texto, foto, audio…).
+    if (_replyTo != null) {
+      pending.replyTo = ReplyQuote.fromMessage(
+        _replyTo!,
+        name: _replyTo!.isMe ? 'Tú' : _senderName(_replyTo!),
+      );
+    }
+    setState(() {
+      _pending.insert(0, pending);
+      _replyTo = null;
+    });
     HapticFeedback.lightImpact();
     if (_scroll.hasClients) {
       _scroll.animateTo(
@@ -253,27 +520,43 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       }
 
       // 2) El mensaje.
-      final created = await ChatService.sendMessage(
-        contactId: widget.chatId,
-        content: pending.text,
-        attachment:
-            pending.attachmentUrl == null
-                ? null
-                : {
-                  'type': pending.attachmentType,
-                  'url': pending.attachmentUrl,
-                  if (pending.width != null) 'width': pending.width,
-                  if (pending.height != null) 'height': pending.height,
-                  if (pending.duration != null) 'duration': pending.duration,
-                },
-      );
+      final attachment =
+          pending.attachmentUrl == null
+              ? null
+              : {
+                'type': pending.attachmentType,
+                'url': pending.attachmentUrl,
+                if (pending.width != null) 'width': pending.width,
+                if (pending.height != null) 'height': pending.height,
+                if (pending.duration != null) 'duration': pending.duration,
+              };
+      final created =
+          widget.isGroup
+              ? await GroupService.send(
+                widget.chatId,
+                content: pending.text,
+                attachment: attachment,
+                replyToId: pending.replyTo?.id,
+              )
+              : await ChatService.sendMessage(
+                contactId: widget.chatId,
+                content: pending.text,
+                attachment: attachment,
+                replyToId: pending.replyTo?.id,
+              );
       if (!mounted) return;
       final sent = ChatMessageModel.fromBackend(created, currentUserId: _myId)
         // Se conserva la vista local para que la foto no "parpadee".
         ..localBytes = pending.localBytes;
       setState(() {
         _pending.remove(pending);
-        _messages.insert(0, sent);
+        // Puede que ya haya llegado por la conexión en tiempo real.
+        final echoed = _find(sent.id);
+        if (echoed != null) {
+          echoed.localBytes ??= pending.localBytes;
+        } else {
+          _messages.insert(0, sent);
+        }
       });
     } catch (error) {
       if (!mounted) return;
@@ -609,6 +892,209 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
+  String _senderName(ChatMessageModel message) {
+    if (message.isMe) return 'Tú';
+    if (!widget.isGroup) return widget.chatName.split(' ').first;
+    return (message.senderName ?? _nameOf(message.senderId ?? ''))
+        .split(' ')
+        .first;
+  }
+
+  static const _quickReactions = ['❤️', '😂', '😮', '😢', '👍', '🙏'];
+
+  /// Mantener presionado un mensaje: reaccionar, responder, copiar,
+  /// eliminar o reportar.
+  void _messageActions(ChatMessageModel message) {
+    if (message.id.startsWith('local') || message.isSystem) return;
+    FocusScope.of(context).unfocus();
+    HapticFeedback.mediumImpact();
+    final mine = message.reactions[_myId];
+
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = AuthPalette.of(sheetContext);
+        Widget tile(
+          IconData icon,
+          String title,
+          VoidCallback onTap, {
+          Color? color,
+        }) => ListTile(
+          leading: Icon(icon, color: color ?? Brand.blue),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontWeight: FontWeight.w600,
+              color: color ?? palette.title,
+            ),
+          ),
+          onTap: () {
+            Navigator.pop(sheetContext);
+            onTap();
+          },
+        );
+
+        return Material(
+          color: palette.card,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(Brand.radiusLg),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 14, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!message.isDeleted)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      for (final emoji in _quickReactions)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _react(message, mine == emoji ? null : emoji);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color:
+                                  mine == emoji
+                                      ? Brand.blue.withValues(alpha: 0.15)
+                                      : null,
+                            ),
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 26),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                if (!message.isDeleted) const SizedBox(height: 6),
+                if (!message.isDeleted)
+                  tile(
+                    PhosphorIconsRegular.arrowBendUpLeft,
+                    'Responder',
+                    () => setState(() => _replyTo = message),
+                  ),
+                if (!message.isDeleted &&
+                    message.text.isNotEmpty &&
+                    !sharedPostPattern.hasMatch(message.text))
+                  tile(PhosphorIconsRegular.copy, 'Copiar', () {
+                    Clipboard.setData(ClipboardData(text: message.text));
+                    showAuthMessage(context, 'Copiado');
+                  }),
+                if (!message.isDeleted &&
+                    message.attachmentType == 'sticker' &&
+                    !message.isMe)
+                  tile(
+                    PhosphorIconsRegular.heart,
+                    'Agregar a mis stickers',
+                    () => _stickerOptions(message),
+                  ),
+                if (message.isMe && !message.isDeleted)
+                  tile(
+                    PhosphorIconsRegular.trash,
+                    'Eliminar para todos',
+                    () => _deleteForEveryone(message),
+                    color: Brand.danger,
+                  ),
+                if (!message.isMe)
+                  tile(
+                    PhosphorIconsRegular.flag,
+                    'Reportar',
+                    () => showReportSheet(
+                      context,
+                      targetType: widget.isGroup ? 'user' : 'message',
+                      targetId:
+                          widget.isGroup
+                              ? (message.senderId ?? '')
+                              : message.id,
+                    ),
+                    color: Brand.danger,
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _react(ChatMessageModel message, String? emoji) async {
+    final before = Map<String, String>.from(message.reactions);
+    setState(() {
+      if (emoji == null) {
+        message.reactions.remove(_myId);
+      } else {
+        message.reactions[_myId] = emoji;
+      }
+    });
+    try {
+      final reactions =
+          widget.isGroup
+              ? await GroupService.react(message.id, emoji)
+              : await ChatService.react(message.id, emoji);
+      if (mounted) setState(() => message.reactions = reactions);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => message.reactions = before);
+      showAuthMessage(context, 'No se pudo reaccionar.');
+    }
+  }
+
+  Future<void> _deleteForEveryone(ChatMessageModel message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('¿Eliminar para todos?'),
+            content: const Text(
+              'El mensaje desaparecerá de la conversación para todos.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text(
+                  'Eliminar',
+                  style: TextStyle(color: Brand.danger),
+                ),
+              ),
+            ],
+          ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      if (widget.isGroup) {
+        await GroupService.deleteForEveryone(message.id);
+      } else {
+        await ChatService.deleteForEveryone(message.id);
+      }
+      if (mounted) setState(message.markDeleted);
+    } catch (_) {
+      if (mounted) showAuthMessage(context, 'No se pudo eliminar.');
+    }
+  }
+
+  void _openGroupInfo() {
+    if (!widget.isGroup) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupInfoScreen(groupId: widget.chatId),
+      ),
+    ).then((_) => _loadGroup());
+  }
+
   void _showFailedOptions(ChatMessageModel message) {
     showModalBottomSheet(
       context: context,
@@ -692,22 +1178,67 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           children: [
             AuthBackButton(onTap: () => Navigator.maybePop(context)),
             const SizedBox(width: 12),
-            UserAvatar(
-              name: widget.chatName,
-              photo: widget.chatAvatar,
-              radius: 19,
-            ),
-            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                widget.chatName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: Brand.displayFont,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w700,
-                  color: palette.title,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _openGroupInfo,
+                child: Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        UserAvatar(
+                          name: _title,
+                          photo: _group?.photoUrl ?? widget.chatAvatar,
+                          radius: 19,
+                        ),
+                        if (_online && !widget.isGroup)
+                          Positioned(
+                            right: -1,
+                            bottom: -1,
+                            child: OnlineDot(border: palette.card),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: Brand.displayFont,
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w700,
+                              color: palette.title,
+                            ),
+                          ),
+                          if (_subtitle != null)
+                            Text(
+                              _subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: Brand.displayFont,
+                                fontSize: 12.5,
+                                fontWeight:
+                                    _typing.isNotEmpty || _online
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                color:
+                                    _typing.isNotEmpty || _online
+                                        ? Brand.blue
+                                        : palette.muted,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -721,7 +1252,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
               color: palette.title,
             ),
             onSelected: (value) async {
-              if (value == 'report') {
+              if (value == 'info') {
+                _openGroupInfo();
+              } else if (value == 'report') {
                 showReportSheet(
                   context,
                   targetType: 'user',
@@ -737,16 +1270,27 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
               }
             },
             itemBuilder:
-                (_) => const [
-                  PopupMenuItem(value: 'report', child: Text('Reportar')),
-                  PopupMenuItem(
-                    value: 'block',
-                    child: Text(
-                      'Bloquear',
-                      style: TextStyle(color: Brand.danger),
-                    ),
-                  ),
-                ],
+                (_) =>
+                    widget.isGroup
+                        ? const [
+                          PopupMenuItem(
+                            value: 'info',
+                            child: Text('Información del grupo'),
+                          ),
+                        ]
+                        : const [
+                          PopupMenuItem(
+                            value: 'report',
+                            child: Text('Reportar'),
+                          ),
+                          PopupMenuItem(
+                            value: 'block',
+                            child: Text(
+                              'Bloquear',
+                              style: TextStyle(color: Brand.danger),
+                            ),
+                          ),
+                        ],
           ),
         ],
       ),
@@ -782,8 +1326,25 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                         // Burbujas seguidas del mismo autor van más juntas.
                         final groupedWithNewer =
                             newer != null &&
-                            newer.isMe == message.isMe &&
+                            !newer.isSystem &&
+                            newer.senderKey == message.senderKey &&
                             _sameDay(newer.createdAt, message.createdAt);
+                        // En grupos, el nombre va en la primera de cada tanda.
+                        final showSender =
+                            widget.isGroup &&
+                            !message.isMe &&
+                            (showDay ||
+                                older.isSystem ||
+                                older.senderKey != message.senderKey);
+
+                        if (message.isSystem) {
+                          return Column(
+                            children: [
+                              if (showDay) _DayChip(date: message.createdAt),
+                              _SystemNote(text: message.text),
+                            ],
+                          );
+                        }
 
                         return Column(
                           children: [
@@ -791,17 +1352,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                             _Bubble(
                               message: message,
                               tight: groupedWithNewer,
+                              myId: _myId,
+                              senderName:
+                                  showSender ? _senderName(message) : null,
+                              otherName: widget.chatName.split(' ').first,
                               onMediaTap: () => _openMedia(message),
                               onStickerLongPress:
-                                  () => _stickerOptions(message),
-                              onReport:
-                                  message.isMe || message.id.startsWith('local')
-                                      ? null
-                                      : () => showReportSheet(
-                                        context,
-                                        targetType: 'message',
-                                        targetId: message.id,
-                                      ),
+                                  () => _messageActions(message),
+                              onReport: () => _messageActions(message),
                               onFailedTap:
                                   message.status == MessageStatus.failed
                                       ? () => _showFailedOptions(message)
@@ -865,6 +1423,39 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   }
 
   Widget _buildInput(AuthPalette palette) {
+    final reply = _replyTo;
+    if (reply == null) return _buildComposer(palette);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          color: palette.card,
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: _QuoteBox(
+                  quote: ReplyQuote.fromMessage(
+                    reply,
+                    name: reply.isMe ? 'Tú' : _senderName(reply),
+                  ),
+                  onDark: false,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Cancelar respuesta',
+                onPressed: () => setState(() => _replyTo = null),
+                icon: Icon(PhosphorIconsRegular.x, color: palette.muted),
+              ),
+            ],
+          ),
+        ),
+        _buildComposer(palette),
+      ],
+    );
+  }
+
+  Widget _buildComposer(AuthPalette palette) {
     final canSend = _input.text.trim().isNotEmpty;
     // Sin texto, el botón grande graba una nota de voz (no en la web).
     final showMic = !canSend && !kIsWeb;
@@ -1140,19 +1731,72 @@ class _DayChip extends StatelessWidget {
 class _Bubble extends StatelessWidget {
   final ChatMessageModel message;
   final bool tight;
+  final String myId;
+
+  /// Nombre de quien escribió (solo en grupos, primera burbuja de la tanda).
+  final String? senderName;
+
+  /// Nombre corto del contacto (para "respondiendo a").
+  final String otherName;
   final VoidCallback? onFailedTap;
   final VoidCallback? onMediaTap;
   final VoidCallback? onStickerLongPress;
+
+  /// Mantener presionado: menú de acciones del mensaje.
   final VoidCallback? onReport;
 
   const _Bubble({
     required this.message,
     required this.tight,
+    this.myId = '',
+    this.senderName,
+    this.otherName = '',
     this.onFailedTap,
     this.onMediaTap,
     this.onStickerLongPress,
     this.onReport,
   });
+
+  /// Reacciones debajo de la burbuja: "❤️ 2  😂".
+  Widget _reactions(AuthPalette palette) {
+    final counts = <String, int>{};
+    for (final emoji in message.reactions.values) {
+      counts[emoji] = (counts[emoji] ?? 0) + 1;
+    }
+    final mine = message.reactions[myId];
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 6, right: 6),
+      child: GestureDetector(
+        onTap: onReport,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: palette.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: mine != null ? Brand.blue : palette.cardBorder,
+            ),
+          ),
+          child: Text(
+            [
+              for (final e in counts.entries)
+                e.value > 1 ? '${e.key} ${e.value}' : e.key,
+            ].join('  '),
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 13,
+              color: palette.title,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _quoteName(ReplyQuote quote) {
+    if (quote.senderId == myId) return 'Tú';
+    return quote.senderName ?? otherName;
+  }
 
   /// Sticker: grande y sin burbuja, con la hora debajo.
   Widget _sticker(BuildContext context, AuthPalette palette, String time) {
@@ -1348,7 +1992,6 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AuthPalette.of(context);
     final isMe = message.isMe;
-    final failed = message.status == MessageStatus.failed;
 
     final time =
         '${message.createdAt.hour.toString().padLeft(2, '0')}:'
@@ -1356,6 +1999,72 @@ class _Bubble extends StatelessWidget {
 
     final metaColor =
         isMe ? Colors.white.withValues(alpha: 0.75) : palette.muted;
+
+    if (message.isDeleted) {
+      return Padding(
+        padding: EdgeInsets.only(top: tight ? 2 : 8),
+        child: Align(
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: GestureDetector(
+            onLongPress: onReport,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: palette.cardBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    PhosphorIconsRegular.prohibit,
+                    size: 15,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isMe ? 'Eliminaste este mensaje' : 'Mensaje eliminado',
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      color: palette.muted,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 11,
+                      color: palette.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final bubble = _buildBubble(context, palette, time, metaColor);
+    if (message.reactions.isEmpty) return bubble;
+    return Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [bubble, _reactions(palette)],
+    );
+  }
+
+  Widget _buildBubble(
+    BuildContext context,
+    AuthPalette palette,
+    String time,
+    Color metaColor,
+  ) {
+    final isMe = message.isMe;
+    final failed = message.status == MessageStatus.failed;
 
     if (message.attachmentType == 'sticker') {
       return _sticker(context, palette, time);
@@ -1412,6 +2121,35 @@ class _Bubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (senderName != null)
+                    Padding(
+                      padding:
+                          message.hasVisual
+                              ? const EdgeInsets.fromLTRB(8, 2, 8, 4)
+                              : const EdgeInsets.only(bottom: 2),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: 1,
+                        child: Text(
+                          senderName!,
+                          style: TextStyle(
+                            fontFamily: Brand.displayFont,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: senderColor(message.senderId ?? ''),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (message.replyTo != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _QuoteBox(
+                        quote: message.replyTo!,
+                        name: _quoteName(message.replyTo!),
+                        onDark: isMe,
+                      ),
+                    ),
                   if (message.hasVisual) _visual(palette),
                   if (message.attachmentType == 'audio') _audio(palette),
                   if (message.text.isNotEmpty)
@@ -1481,16 +2219,28 @@ enum MessageStatus { sending, sent, failed }
 
 class ChatMessageModel {
   final String id;
-  final String text;
+  String text;
   final DateTime createdAt;
   final bool isMe;
 
   /// Para mis mensajes: si el otro ya lo leyó.
-  final bool isRead;
+  bool isRead;
   MessageStatus status;
 
-  /// Adjunto: image | video | audio.
-  final String? attachmentType;
+  /// Quién lo envió (en grupos, además su nombre y foto).
+  final String? senderId;
+  final String? senderName;
+
+  /// "user" o "system" (avisos del grupo como "Ana agregó a Luis").
+  final String kind;
+
+  /// Mensaje que responde, reacciones ({usuario: emoji}) y si se eliminó.
+  ReplyQuote? replyTo;
+  Map<String, String> reactions;
+  bool isDeleted;
+
+  /// Adjunto: image | video | audio | sticker.
+  String? attachmentType;
   String? attachmentUrl;
   int? width;
   int? height;
@@ -1515,7 +2265,26 @@ class ChatMessageModel {
     this.duration,
     this.localBytes,
     this.localName,
-  });
+    this.senderId,
+    this.senderName,
+    this.kind = 'user',
+    this.replyTo,
+    Map<String, String>? reactions,
+    this.isDeleted = false,
+  }) : reactions = reactions ?? {};
+
+  bool get isSystem => kind == 'system';
+
+  /// Para agrupar burbujas seguidas del mismo autor.
+  String get senderKey => isMe ? 'me' : (senderId ?? 'other');
+
+  void markDeleted() {
+    isDeleted = true;
+    text = '';
+    attachmentType = null;
+    attachmentUrl = null;
+    reactions = {};
+  }
 
   bool get hasVisual => attachmentType == 'image' || attachmentType == 'video';
 
@@ -1540,14 +2309,32 @@ class ChatMessageModel {
             ? Map<String, dynamic>.from(json['attachment'] as Map)
             : null;
 
+    // 1 a 1 trae sender_id; los grupos traen sender {id, name}.
+    final sender =
+        json['sender'] is Map
+            ? Map<String, dynamic>.from(json['sender'] as Map)
+            : null;
+    final senderId = json['sender_id']?.toString() ?? sender?['id']?.toString();
+
     return ChatMessageModel(
       id: json['id']?.toString() ?? '',
       text: json['content']?.toString() ?? '',
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal() ??
           DateTime.now(),
-      isMe: json['sender_id']?.toString() == currentUserId,
+      isMe: senderId != null && senderId == currentUserId,
       isRead: json['is_read'] == true,
+      senderId: senderId,
+      senderName: sender?['name']?.toString(),
+      kind: json['kind']?.toString() ?? 'user',
+      isDeleted: json['is_deleted'] == true,
+      reactions: ChatService.reactionsFrom(json['reactions']),
+      replyTo:
+          json['reply_to'] is Map
+              ? ReplyQuote.fromJson(
+                Map<String, dynamic>.from(json['reply_to'] as Map),
+              )
+              : null,
       attachmentType: attachment?['type']?.toString(),
       attachmentUrl: attachment?['url']?.toString(),
       width: (attachment?['width'] as num?)?.toInt(),
@@ -1626,4 +2413,190 @@ class _SharedPost extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Mensaje citado al responder.
+class ReplyQuote {
+  final String id;
+  final String? senderId;
+  final String? senderName;
+  final String content;
+  final String? attachmentType;
+  final bool isDeleted;
+
+  const ReplyQuote({
+    required this.id,
+    this.senderId,
+    this.senderName,
+    this.content = '',
+    this.attachmentType,
+    this.isDeleted = false,
+  });
+
+  factory ReplyQuote.fromJson(Map<String, dynamic> json) => ReplyQuote(
+    id: json['id']?.toString() ?? '',
+    senderId: json['sender_id']?.toString(),
+    senderName: json['sender_name']?.toString(),
+    content: json['content']?.toString() ?? '',
+    attachmentType: json['attachment_type']?.toString(),
+    isDeleted: json['is_deleted'] == true,
+  );
+
+  factory ReplyQuote.fromMessage(ChatMessageModel m, {String? name}) =>
+      ReplyQuote(
+        id: m.id,
+        senderId: m.senderId,
+        senderName: name,
+        content: m.text,
+        attachmentType: m.attachmentType,
+        isDeleted: m.isDeleted,
+      );
+
+  /// Texto corto: el mensaje, o "📷 Foto", "🎤 Nota de voz"…
+  String get preview {
+    if (isDeleted) return 'Mensaje eliminado';
+    if (sharedPostPattern.hasMatch(content)) return '📰 Publicación';
+    if (content.trim().isNotEmpty) return content.trim();
+    return switch (attachmentType) {
+      'image' => '📷 Foto',
+      'video' => '🎥 Video',
+      'audio' => '🎤 Nota de voz',
+      'sticker' => '💟 Sticker',
+      _ => 'Mensaje',
+    };
+  }
+}
+
+/// Cita dentro de la burbuja (o sobre la caja de texto al responder).
+class _QuoteBox extends StatelessWidget {
+  final ReplyQuote quote;
+  final String? name;
+  final bool onDark;
+
+  const _QuoteBox({required this.quote, this.name, required this.onDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    final accent = onDark ? Colors.white : Brand.blue;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 120),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      decoration: BoxDecoration(
+        color:
+            onDark
+                ? Colors.white.withValues(alpha: 0.16)
+                : Brand.blue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: accent, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            name ?? quote.senderName ?? 'Mensaje',
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: accent,
+            ),
+          ),
+          Text(
+            quote.preview,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 13,
+              fontStyle: quote.isDeleted ? FontStyle.italic : null,
+              color:
+                  onDark ? Colors.white.withValues(alpha: 0.85) : palette.body,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso del grupo ("Ana agregó a Luis").
+class _SystemNote extends StatelessWidget {
+  final String text;
+
+  const _SystemNote({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AuthPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: palette.fieldFill,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              fontSize: 12.5,
+              color: palette.muted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Punto verde de "en línea".
+class OnlineDot extends StatelessWidget {
+  final Color border;
+  final double size;
+
+  const OnlineDot({super.key, required this.border, this.size = 12});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: const Color(0xFF22C55E),
+      shape: BoxShape.circle,
+      border: Border.all(color: border, width: 2),
+    ),
+  );
+}
+
+/// Color estable por persona para su nombre en los grupos.
+Color senderColor(String id) {
+  const colors = [
+    Color(0xFF2563EB),
+    Color(0xFFDB2777),
+    Color(0xFF059669),
+    Color(0xFFD97706),
+    Color(0xFF7C3AED),
+    Color(0xFFDC2626),
+    Color(0xFF0891B2),
+  ];
+  return colors[id.hashCode.abs() % colors.length];
+}
+
+/// "hoy a las 14:05", "ayer a las 9:30" o "12/11/2026".
+String lastSeenLabel(DateTime when, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  final hhmm =
+      '${when.hour.toString().padLeft(2, '0')}:'
+      '${when.minute.toString().padLeft(2, '0')}';
+  final day = DateTime(when.year, when.month, when.day);
+  final diff = DateTime(today.year, today.month, today.day).difference(day);
+  if (diff.inDays == 0) return 'hoy a las $hhmm';
+  if (diff.inDays == 1) return 'ayer a las $hhmm';
+  return '${when.day.toString().padLeft(2, '0')}/'
+      '${when.month.toString().padLeft(2, '0')}/${when.year}';
 }

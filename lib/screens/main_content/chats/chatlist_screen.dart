@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:connect_do/widgets/stories/stories_row.dart';
 import 'package:connect_do/screens/main_content/contacts/contacts_screen.dart';
 import 'package:connect_do/services/chat_service.dart';
+import 'package:connect_do/services/group_service.dart';
+import 'package:connect_do/services/realtime_service.dart';
+import 'package:connect_do/screens/main_content/chats/group_info_screen.dart';
 import 'package:connect_do/services/contact_service.dart';
 import 'package:connect_do/services/user_service.dart';
 import 'package:connect_do/theme/brand.dart';
@@ -40,6 +45,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }).toList();
   }
 
+  StreamSubscription<Map<String, dynamic>>? _live;
+  Timer? _reloadSoon;
+
   @override
   void initState() {
     super.initState();
@@ -47,11 +55,33 @@ class _ChatListScreenState extends State<ChatListScreen> {
       final query = _searchController.text.trim().toLowerCase();
       if (query != _query) setState(() => _query = query);
     });
+    RealtimeService.instance.ensureConnected();
+    _live = RealtimeService.instance.events.listen(_onEvent);
     _load();
+  }
+
+  /// Mensaje nuevo, eliminado o cambio en un grupo: se recarga la lista
+  /// (agrupando varios avisos seguidos en una sola consulta).
+  void _onEvent(Map<String, dynamic> event) {
+    switch (event['type']) {
+      case 'presence':
+        if (mounted) setState(() {});
+      case 'message' ||
+          'group_message' ||
+          'deleted' ||
+          'group_updated' ||
+          'read':
+        _reloadSoon?.cancel();
+        _reloadSoon = Timer(const Duration(milliseconds: 800), () {
+          if (mounted) _load();
+        });
+    }
   }
 
   @override
   void dispose() {
+    _live?.cancel();
+    _reloadSoon?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -62,11 +92,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
 
     try {
-      final data = await ChatService.getConversations();
+      final results = await Future.wait([
+        ChatService.getConversations(),
+        // Si los grupos fallan, igual se muestran los chats.
+        GroupService.list().catchError((_) => <ChatGroup>[]),
+      ]);
+      final data = results[0] as List<Map<String, dynamic>>;
+      final groups = results[1] as List<ChatGroup>;
       if (!mounted) return;
       setState(() {
-        _chats =
-            data.map((item) => ChatListModel.fromBackend(item, _myId)).toList();
+        _chats = [
+          ...data.map((item) => ChatListModel.fromBackend(item, _myId)),
+          ...groups.map((g) => ChatListModel.fromGroup(g, _myId)),
+        ]..sort((a, b) {
+          final x = a.sortAt, y = b.sortAt;
+          if (x == null && y == null) return 0;
+          if (x == null) return 1;
+          if (y == null) return -1;
+          return y.compareTo(x);
+        });
         _isLoading = false;
         _hasError = false;
       });
@@ -83,6 +127,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required String id,
     required String name,
     required String photo,
+    bool isGroup = false,
   }) async {
     await Navigator.push(
       context,
@@ -92,8 +137,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
               chatId: id,
               chatName: name,
               chatAvatar: photo,
+              isGroup: isGroup,
             ),
       ),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _newGroup() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NewGroupScreen()),
     );
     if (mounted) _load();
   }
@@ -142,6 +196,27 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ),
                   ),
                   const Spacer(),
+                  Tooltip(
+                    message: 'Nuevo grupo',
+                    child: Material(
+                      color: Brand.blue.withValues(alpha: 0.1),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: _newGroup,
+                        child: const SizedBox(
+                          width: 42,
+                          height: 42,
+                          child: Icon(
+                            PhosphorIconsRegular.usersThree,
+                            color: Brand.blue,
+                            size: 21,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Tooltip(
                     message: 'Nuevo chat',
                     child: Material(
@@ -229,6 +304,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                                     id: chats[i].chatId,
                                                     name: chats[i].userName,
                                                     photo: chats[i].userAvatar,
+                                                    isGroup: chats[i].isGroup,
                                                   ),
                                             ),
                                           ],
@@ -390,7 +466,40 @@ class _ChatTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Row(
           children: [
-            UserAvatar(name: chat.userName, photo: chat.userAvatar, radius: 24),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                UserAvatar(
+                  name: chat.userName,
+                  photo: chat.userAvatar,
+                  radius: 24,
+                ),
+                if (chat.isGroup)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Brand.blue,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: palette.card, width: 2),
+                      ),
+                      child: const Icon(
+                        PhosphorIconsFill.usersThree,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                else if (RealtimeService.instance.online[chat.userId] == true)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: OnlineDot(border: palette.card, size: 13),
+                  ),
+              ],
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -434,6 +543,11 @@ class _ChatTile extends StatelessWidget {
                               if (chat.lastMessageIsMine)
                                 TextSpan(
                                   text: 'Tú: ',
+                                  style: TextStyle(color: palette.muted),
+                                )
+                              else if (chat.senderPrefix.isNotEmpty)
+                                TextSpan(
+                                  text: '${chat.senderPrefix}: ',
                                   style: TextStyle(color: palette.muted),
                                 ),
                               TextSpan(text: chat.lastMessage),
@@ -687,6 +801,13 @@ class ChatListModel {
   final String lastMessageTime;
   final bool lastMessageIsMine;
   final int unreadCount;
+  final bool isGroup;
+
+  /// En grupos: quién escribió el último mensaje ("Ana").
+  final String senderPrefix;
+
+  /// Para ordenar (lo más reciente arriba).
+  final DateTime? sortAt;
 
   ChatListModel({
     required this.chatId,
@@ -697,7 +818,44 @@ class ChatListModel {
     required this.lastMessageTime,
     this.lastMessageIsMine = false,
     this.unreadCount = 0,
+    this.isGroup = false,
+    this.senderPrefix = '',
+    this.sortAt,
   });
+
+  factory ChatListModel.fromGroup(ChatGroup group, String currentUserId) {
+    final last = group.lastMessage;
+    final sender =
+        last?['sender'] is Map
+            ? Map<String, dynamic>.from(last!['sender'] as Map)
+            : null;
+    final isSystem = last?['kind'] == 'system';
+    final mine = sender?['id']?.toString() == currentUserId;
+    return ChatListModel(
+      chatId: group.id,
+      userId: group.id,
+      userName: group.name,
+      userAvatar: group.photoUrl,
+      lastMessage:
+          last == null
+              ? 'Grupo nuevo'
+              : last['is_deleted'] == true
+              ? 'Mensaje eliminado'
+              : messagePreviewText(
+                last['content']?.toString() ?? '',
+                last['attachment'],
+              ),
+      lastMessageTime: formatChatDate(last?['created_at']?.toString()),
+      lastMessageIsMine: !isSystem && mine,
+      senderPrefix:
+          isSystem || mine
+              ? ''
+              : (sender?['name']?.toString() ?? '').split(' ').first,
+      unreadCount: group.unreadCount,
+      isGroup: true,
+      sortAt: group.lastActivity,
+    );
+  }
 
   factory ChatListModel.fromBackend(
     Map<String, dynamic> json, [
@@ -706,26 +864,13 @@ class ChatListModel {
     final contact = json['contact'] as Map<String, dynamic>? ?? {};
     final lastMessage = json['last_message'] as Map<String, dynamic>?;
     final contactId = contact['id']?.toString() ?? '';
-    final raw = lastMessage?['content']?.toString().trim() ?? '';
-    // Publicación compartida: se muestra legible, sin la marca interna.
-    final text =
-        raw.startsWith('[pub:') ? '\u{1F4F0} Publicación compartida' : raw;
-    final attachment = lastMessage?['attachment'];
-    final attachmentLabel = switch (attachment is Map
-        ? attachment['type']
-        : null) {
-      'image' => '📷 Foto',
-      'video' => '🎥 Video',
-      'audio' => '🎤 Nota de voz',
-      'sticker' => '💟 Sticker',
-      _ => '',
-    };
     final content =
-        attachmentLabel.isEmpty
-            ? text
-            : text.isEmpty
-            ? attachmentLabel
-            : '$attachmentLabel · $text';
+        lastMessage?['is_deleted'] == true
+            ? 'Mensaje eliminado'
+            : messagePreviewText(
+              lastMessage?['content']?.toString() ?? '',
+              lastMessage?['attachment'],
+            );
 
     return ChatListModel(
       chatId: contactId,
@@ -738,8 +883,34 @@ class ChatListModel {
           currentUserId.isNotEmpty &&
           lastMessage?['sender_id']?.toString() == currentUserId,
       unreadCount: int.tryParse('${json['unread_count'] ?? 0}') ?? 0,
+      sortAt:
+          DateTime.tryParse(
+            lastMessage?['created_at']?.toString() ?? '',
+          )?.toLocal(),
     );
   }
+}
+
+/// Texto corto del último mensaje ("📷 Foto · hola", "📰 Publicación…").
+String messagePreviewText(String rawContent, dynamic attachment) {
+  final raw = rawContent.trim();
+  // Publicación compartida: se muestra legible, sin la marca interna.
+  final text =
+      raw.startsWith('[pub:') ? '\u{1F4F0} Publicación compartida' : raw;
+  final attachmentLabel = switch (attachment is Map
+      ? attachment['type']
+      : null) {
+    'image' => '📷 Foto',
+    'video' => '🎥 Video',
+    'audio' => '🎤 Nota de voz',
+    'sticker' => '💟 Sticker',
+    _ => '',
+  };
+  return attachmentLabel.isEmpty
+      ? text
+      : text.isEmpty
+      ? attachmentLabel
+      : '$attachmentLabel · $text';
 }
 
 /// "14:05", "Ayer", "lun" o "12/11/26".

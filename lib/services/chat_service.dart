@@ -71,7 +71,8 @@ class ChatService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data is Map && data['total'] is num) {
-        return (data['total'] as num).toInt();
+        // Más los de grupos (si el servidor aún no los tiene, cuenta 0).
+        return (data['total'] as num).toInt() + await _groupsUnread();
       }
     }
 
@@ -91,6 +92,19 @@ class ChatService {
     }
 
     return total;
+  }
+
+  static Future<int> _groupsUnread() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/groups/unread-count'),
+        headers: await _headers(),
+      );
+      if (response.statusCode != 200) return 0;
+      return ((jsonDecode(response.body)['total'] as num?) ?? 0).toInt();
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ===============================
@@ -143,6 +157,9 @@ class ChatService {
 
     /// Foto, video o nota de voz ya subida a Cloudinary.
     Map<String, dynamic>? attachment,
+
+    /// Mensaje que se responde citándolo.
+    String? replyToId,
   }) async {
     final headers = await _headers();
 
@@ -152,6 +169,7 @@ class ChatService {
       body: jsonEncode({
         'content': content,
         if (attachment != null) 'attachment': attachment,
+        if (replyToId != null) 'reply_to_id': replyToId,
       }),
     );
 
@@ -163,6 +181,57 @@ class ChatService {
 
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
+
+  // ===============================
+  // REACCIONAR / ELIMINAR / EN LÍNEA
+  // ===============================
+
+  /// [emoji] null quita mi reacción. Devuelve todas las reacciones.
+  static Future<Map<String, String>> react(
+    String messageId,
+    String? emoji,
+  ) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/chats/messages/$messageId/react'),
+      headers: await _headers(),
+      body: jsonEncode({'emoji': emoji}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('No se pudo reaccionar.');
+    }
+    return reactionsFrom(jsonDecode(response.body)['reactions']);
+  }
+
+  /// Eliminar para todos (solo mis mensajes).
+  static Future<void> deleteForEveryone(String messageId) async {
+    final response = await http.delete(
+      Uri.parse('${ApiConfig.baseUrl}/chats/messages/$messageId'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 204 && response.statusCode != 200) {
+      throw Exception('No se pudo eliminar.');
+    }
+  }
+
+  /// {online, last_seen_at} del contacto.
+  static Future<(bool, DateTime?)> presence(String contactId) async {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/chats/$contactId/presence'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) return (false, null);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (
+      data['online'] == true,
+      DateTime.tryParse(data['last_seen_at']?.toString() ?? '')?.toLocal(),
+    );
+  }
+
+  static Map<String, String> reactionsFrom(dynamic raw) => {
+    if (raw is Map)
+      for (final entry in raw.entries)
+        entry.key.toString(): entry.value.toString(),
+  };
 
   // ===============================
   // MARCAR COMO LEÍDOS
